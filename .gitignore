@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Credenciais e sessões (NUNCA versionar)
+.env
+.env.*
+sessions/
+*.session
+*.session-journal
+
+# Dados locais e logs da aplicação
+data/
+logs/
+*.log
+
+# Build
+build/
+dist/
+
+# Screenshots gerados em desenvolvimento
+.screens/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
