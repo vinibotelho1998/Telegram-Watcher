@@ -52,6 +52,25 @@ def test_multiple_filters_union_destinations():
     assert set(out) == {-100, -200}
 
 
+def test_include_filter_does_not_replicate_others():
+    flt = make(include_words=["9800x3d", "mãe", "5070"], destination_ids=[-100])
+    assert resolve_destinations([flt], -1, "placa 5070 barata", DEFAULT) == [-100]
+    assert resolve_destinations([flt], -1, "suporte para monitor e tv", DEFAULT) == []
+
+
+def test_exclude_only_filter_is_blocklist_not_catch_all():
+    keywords = make(include_words=["5070"], destination_ids=[-100])
+    blocklist = make(exclude_words=["pneu"], destination_ids=[-100])
+    assert resolve_destinations([keywords, blocklist], -1, "kit pampers glicerina", DEFAULT) == []
+    assert resolve_destinations([keywords, blocklist], -1, "placa 5070", DEFAULT) == [-100]
+
+
+def test_exclude_blocks_across_filters():
+    keywords = make(include_words=["5070"], destination_ids=[-100])
+    blocklist = make(exclude_words=["pneu"], destination_ids=[-100])
+    assert resolve_destinations([keywords, blocklist], -1, "placa 5070 com pneu", DEFAULT) == []
+
+
 def test_min_confidence_gate():
     flt = make(smart_rules=["store:shopee"], destination_ids=[-100], min_confidence=0.9)
     assert resolve_destinations([flt], -1, "shopee", DEFAULT) == []

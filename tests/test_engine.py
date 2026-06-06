@@ -96,6 +96,58 @@ def test_smart_rule_capture_end_to_end():
     assert engine.sent == [(1, -100)]
 
 
+class FakeClient:
+    def __init__(self):
+        self.forwarded = []
+        self.messages = []
+        self.files = []
+        self.downloads = 0
+
+    async def forward_messages(self, dest, message):
+        self.forwarded.append((dest, message.id))
+
+    async def send_message(self, dest, text, formatting_entities=None):
+        self.messages.append((dest, text))
+
+    async def send_file(self, dest, data, caption=None, formatting_entities=None, attributes=None):
+        self.files.append((dest, data, caption))
+
+    async def download_media(self, message, file=None):
+        self.downloads += 1
+        return b"bytes"
+
+
+def test_bot_copies_text_instead_of_user_forward():
+    engine = make_engine([])
+    del engine._send
+    engine._user = FakeClient()
+    engine._bot = FakeClient()
+    run(engine._send(FakeMessage(1, "promo"), -100))
+    assert engine._bot.messages == [(-100, "promo")]
+    assert engine._user.forwarded == []
+    assert engine._bot.forwarded == []
+
+
+def test_bot_copies_media_via_download_reupload():
+    engine = make_engine([])
+    del engine._send
+    engine._user = FakeClient()
+    engine._bot = FakeClient()
+    run(engine._send(FakeMessage(2, "veja", media=object()), -100))
+    assert engine._user.downloads == 1
+    assert engine._bot.files == [(-100, b"bytes", "veja")]
+    assert engine._bot.messages == []
+
+
+def test_user_forwards_when_no_bot():
+    engine = make_engine([])
+    del engine._send
+    engine._user = FakeClient()
+    engine._bot = None
+    run(engine._send(FakeMessage(3, "oi"), -100))
+    assert engine._user.forwarded == [(-100, 3)]
+
+
 def test_stop_when_offline_is_noop():
     engine = make_engine([])
     run(engine.stop())

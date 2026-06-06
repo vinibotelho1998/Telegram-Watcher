@@ -66,6 +66,9 @@ class PasswordDialog(MessageBoxBase):
 
 
 class FilterDialog(MessageBoxBase):
+    _INCLUDE_ALL = "Incluir se conter (vazio = replica tudo; separe por vírgula, + exige junção)"
+    _INCLUDE_SMART = "Incluir se conter (vazio = filtra pela detecção inteligente abaixo)"
+
     def __init__(self, config: AppConfig, existing: Filter | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
@@ -82,16 +85,19 @@ class FilterDialog(MessageBoxBase):
         self._add_field("Nome", self.name_input)
 
         self.include_input = LineEdit()
-        self.include_input.setPlaceholderText("cupom + mercado livre ou meli")
-        self._add_field("Incluir se conter (separe por vírgula, + exige junção)", self.include_input)
+        self.include_input.setPlaceholderText("ex: cupom + mercado livre ou meli")
+        self.include_caption = CaptionLabel(self._INCLUDE_ALL)
+        self.viewLayout.addWidget(self.include_caption)
+        self.viewLayout.addWidget(self.include_input)
 
         self.exclude_input = LineEdit()
         self.exclude_input.setPlaceholderText("esgotado, encerrado")
-        self._add_field("Ignorar se conter", self.exclude_input)
+        self._add_field("Ignorar se conter (bloqueia em todos os filtros)", self.exclude_input)
 
         self._build_smart_section()
         self._build_channels_section()
         self._load(existing)
+        self._connect_smart_hint()
 
         self.yesButton.setText("Salvar")
         self.cancelButton.setText("Cancelar")
@@ -101,6 +107,20 @@ class FilterDialog(MessageBoxBase):
         caption = CaptionLabel(label)
         self.viewLayout.addWidget(caption)
         self.viewLayout.addWidget(widget)
+
+    def _connect_smart_hint(self) -> None:
+        for check in self._smart_checks.values():
+            check.stateChanged.connect(self._refresh_include_hint)
+        self.store_combo.currentIndexChanged.connect(self._refresh_include_hint)
+        self._refresh_include_hint()
+
+    def _smart_selected(self) -> bool:
+        if any(check.isChecked() for check in self._smart_checks.values()):
+            return True
+        return self.store_combo.currentIndex() > 0
+
+    def _refresh_include_hint(self) -> None:
+        self.include_caption.setText(self._INCLUDE_SMART if self._smart_selected() else self._INCLUDE_ALL)
 
     def _build_smart_section(self) -> None:
         self.viewLayout.addWidget(CaptionLabel("Detecção inteligente"))

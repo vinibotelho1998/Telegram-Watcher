@@ -244,17 +244,42 @@ class MonitorEngine:
             elapsed = time.monotonic() - self._last_send
             if elapsed < _SEND_INTERVAL:
                 await asyncio.sleep(_SEND_INTERVAL - elapsed)
-            try:
-                await self._user.forward_messages(dest, message)
-            except (FloodWaitError, asyncio.CancelledError):
-                raise
-            except Exception:
-                caption = message.message or getattr(message, "text", "") or ""
-                if message.media:
-                    await self._user.send_file(dest, message.media, caption=caption)
-                else:
-                    await self._user.send_message(dest, caption)
+            if self._bot is not None:
+                await self._copy_as_bot(message, dest)
+            else:
+                await self._send_as_user(message, dest)
             self._last_send = time.monotonic()
+
+    async def _copy_as_bot(self, message, dest: int) -> None:
+        caption = message.message or getattr(message, "text", "") or ""
+        entities = getattr(message, "entities", None) or None
+        if message.media and not getattr(message, "web_preview", None):
+            data = await self._user.download_media(message, file=bytes)
+            if data:
+                document = getattr(message, "document", None)
+                attributes = list(document.attributes) if document else None
+                await self._bot.send_file(
+                    dest,
+                    data,
+                    caption=caption,
+                    formatting_entities=entities,
+                    attributes=attributes,
+                )
+                return
+        if caption:
+            await self._bot.send_message(dest, caption, formatting_entities=entities)
+
+    async def _send_as_user(self, message, dest: int) -> None:
+        try:
+            await self._user.forward_messages(dest, message)
+        except (FloodWaitError, asyncio.CancelledError):
+            raise
+        except Exception:
+            caption = message.message or getattr(message, "text", "") or ""
+            if message.media:
+                await self._user.send_file(dest, message.media, caption=caption)
+            else:
+                await self._user.send_message(dest, caption)
 
     async def stop(self) -> None:
         if self.state == EngineState.OFFLINE:
