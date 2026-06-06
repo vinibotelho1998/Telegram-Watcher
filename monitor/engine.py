@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import mimetypes
 import time
 from collections.abc import Awaitable, Callable
 from typing import Optional
@@ -256,18 +258,38 @@ class MonitorEngine:
         if message.media and not getattr(message, "web_preview", None):
             data = await self._user.download_media(message, file=bytes)
             if data:
+                buffer = io.BytesIO(data)
                 document = getattr(message, "document", None)
-                attributes = list(document.attributes) if document else None
-                await self._bot.send_file(
-                    dest,
-                    data,
-                    caption=caption,
-                    formatting_entities=entities,
-                    attributes=attributes,
-                )
+                if document:
+                    buffer.name = self._document_name(document)
+                    await self._bot.send_file(
+                        dest,
+                        buffer,
+                        caption=caption,
+                        formatting_entities=entities,
+                        attributes=list(document.attributes),
+                        force_document=False,
+                    )
+                else:
+                    buffer.name = "image.jpg"
+                    await self._bot.send_file(
+                        dest,
+                        buffer,
+                        caption=caption,
+                        formatting_entities=entities,
+                    )
                 return
         if caption:
             await self._bot.send_message(dest, caption, formatting_entities=entities)
+
+    @staticmethod
+    def _document_name(document) -> str:
+        for attr in document.attributes:
+            name = getattr(attr, "file_name", None)
+            if name:
+                return name
+        extension = mimetypes.guess_extension(getattr(document, "mime_type", "") or "") or ".bin"
+        return f"arquivo{extension}"
 
     async def _send_as_user(self, message, dest: int) -> None:
         try:

@@ -64,6 +64,23 @@ def test_smart_rules_coupon_and_store_and_discount():
     assert not matches_smart_rules(result, ["cashback"])
 
 
+@pytest.mark.parametrize(
+    "text, captures",
+    [
+        ('Smart TV 50" por R$ 1.999 use o cupom TV50OFF', False),
+        ("Notebook Dell R$ 3.499 a vista, cupom DELL100", False),
+        ("Echo Dot de R$ 499 por R$ 199 + cupom AMAZON10", False),
+        ("Geladeira em 10x de R$ 250 com cupom CASA20", False),
+        ("Cupom MELI50: R$ 50 OFF em tudo no Mercado Livre", True),
+        ("Use o cupom MAE100 e ganhe R$ 20 OFF", True),
+        ("🔥 Cupom LIVE200 acima de R$ 200", True),
+    ],
+)
+def test_any_coupon_ignores_product_ads(text, captures):
+    result = det.detect(text)
+    assert matches_smart_rules(result, ["any_coupon"]) is captures
+
+
 def test_smart_rules_free_shipping_and_cashback():
     fs = det.detect("Aproveite o frete gratis na Shopee hoje")
     assert fs.is_free_shipping and matches_smart_rules(fs, ["free_shipping"])

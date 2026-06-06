@@ -109,8 +109,9 @@ class FakeClient:
     async def send_message(self, dest, text, formatting_entities=None):
         self.messages.append((dest, text))
 
-    async def send_file(self, dest, data, caption=None, formatting_entities=None, attributes=None):
-        self.files.append((dest, data, caption))
+    async def send_file(self, dest, data, caption=None, formatting_entities=None, attributes=None, force_document=False):
+        payload = data.read() if hasattr(data, "read") else data
+        self.files.append((dest, payload, caption))
 
     async def download_media(self, message, file=None):
         self.downloads += 1

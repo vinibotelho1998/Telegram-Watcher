@@ -91,6 +91,16 @@ _NEW_USER = ["novos usuarios", "novo usuario", "primeira compra", "conta nova", 
 _FREE_SHIPPING = ["frete gratis", "envio gratis", "sem frete", "frete free"]
 _CASHBACK = ["cashback", "dinheiro de volta", "receba de volta", "volta r$"]
 _LINKS = ["http", "bit.ly", "tidd.ly", "shp.ee", "amzn.to", "/sec/", "mercadolivre"]
+_PRODUCT_PRICE_CUES = (
+    "por r$", "a vista", "no pix", "no boleto", "sem juros", "parcel",
+    "saindo por", "sai por", "fica por", "leve por", "x de r$", "por apenas",
+)
+_DISCOUNT_VALUE_CUES = (
+    "off", "desconto", "de volta", "cashback", "abatimento", "cupom de",
+    "voucher de", "vale de", "credito", "ganhe", "abate",
+    "acima de", "a partir de", "minimo", "minima", "compras de", "em compras",
+)
+_PRICE = re.compile(r"r\$\s*\d[\d.\s]*(?:,\d{2})?", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -114,6 +124,7 @@ class Detection:
     is_new_user: bool = False
     is_flash: bool = False
     requires_coupon: bool = False
+    has_price: bool = False
 
     @property
     def has_coupon(self) -> bool:
@@ -172,11 +183,23 @@ class CouponDetector:
         )
         detection.confidence = self._confidence(detection, has_word, discount, text)
         detection.has_offer = detection.confidence > 0.25
+        detection.has_price = self._has_product_price(norm)
         return detection
 
     @staticmethod
     def _has(norm: str, terms: list[str]) -> bool:
         return any(term in norm for term in terms)
+
+    @staticmethod
+    def _has_product_price(norm: str) -> bool:
+        if any(cue in norm for cue in _PRODUCT_PRICE_CUES):
+            return True
+        for match in _PRICE.finditer(norm):
+            window = norm[max(0, match.start() - 20): match.end() + 12]
+            if any(hint in window for hint in _DISCOUNT_VALUE_CUES):
+                continue
+            return True
+        return False
 
     def _detect_store(self, text: str, norm: str) -> str | None:
         upper = text.upper()
@@ -264,7 +287,7 @@ def matches_smart_rules(det: Detection, rules: list[str]) -> bool:
 
 def _rule_matches(det: Detection, rule: str) -> bool:
     if rule in ("any_coupon", "coupon", "cupom"):
-        return det.has_coupon or det.requires_coupon
+        return (det.has_coupon or det.requires_coupon) and not det.has_price
     if rule in ("free_shipping", "frete"):
         return det.is_free_shipping
     if rule == "cashback":
