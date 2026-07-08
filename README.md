@@ -16,6 +16,7 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 - Filtros inteligentes que detectam cupons, frete grátis, cashback, descontos e lojas sem precisar cadastrar cada código.
 - Filtros por palavra com lógica de inclusão e exclusão, suporte a junção obrigatória com `+` e alternativas com `ou`.
 - Dashboard com métricas ao vivo, gráfico de atividade por hora e histórico das últimas capturas.
+- Compra automática na KaBuM: configure produtos, palavras e preço máximo, e o robô compra sozinho até gerar o PIX, aplicando cupom da mensagem e avisando no seu Telegram.
 - Bandeja do sistema, inicialização junto com o Windows e início automático do monitor.
 - Credenciais e sessões guardadas localmente, fora do controle de versão.
 
@@ -69,6 +70,17 @@ No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
 2. Salve e clique em **Iniciar monitor** no Dashboard. Na primeira vez o Telegram envia um código de verificação, que você digita na janela que aparece.
 3. Abra a aba **Canais**, clique em **Sincronizar** e marque cada canal como Origem ou Destino.
 4. Em **Filtros**, crie um novo filtro com palavras ou detecção inteligente.
+
+## Compra automática (KaBuM)
+
+Na aba **Auto-Compra** você configura tudo: produtos vigiados (palavras com `+` e `ou`, exclusões e preço máximo à vista), modo simulação ou compra real, uso automático de cupom da mensagem e a conexão com a sua conta KaBuM (login feito na janela real do site, a senha nunca passa pelo app). Quando uma promoção capturada casa com um produto vigiado, o robô valida o preço na página do produto, percorre o checkout, seleciona PIX e para na geração do código, que chega no app e nas suas Mensagens Salvas do Telegram com print e métricas por etapa. O pagamento é sempre seu: pague o PIX ou deixe expirar que o pedido cancela sozinho.
+
+Requer o Playwright:
+
+```bash
+pip install -r requirements-autobuy.txt
+playwright install chromium
+```
 
 ## Gerar executável
 

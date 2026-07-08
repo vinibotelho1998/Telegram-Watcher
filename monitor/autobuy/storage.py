@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .. import paths
+from ..storage import read_json, write_json
+from .models import WatchItem
+
+
+@dataclass(slots=True)
+class AutobuySettings:
+    enabled: bool = False
+    real_mode: bool = False
+    use_coupon: bool = True
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "AutobuySettings":
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            real_mode=bool(raw.get("real_mode", False)),
+            use_coupon=bool(raw.get("use_coupon", True)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"enabled": self.enabled, "real_mode": self.real_mode, "use_coupon": self.use_coupon}
+
+
+class AutobuyStore:
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = path or paths.autobuy_config_file()
+
+    def load(self) -> tuple[AutobuySettings, list[WatchItem]]:
+        data = read_json(self.path, {})
+        if not isinstance(data, dict):
+            data = {}
+        settings = AutobuySettings.from_dict(data.get("settings") or {})
+        raw_items = data.get("items") or []
+        items = [WatchItem.from_dict(item) for item in raw_items if isinstance(item, dict)]
+        return settings, items
+
+    def save(self, settings: AutobuySettings, items: list[WatchItem]) -> bool:
+        return write_json(self.path, {"settings": settings.to_dict(), "items": [i.to_dict() for i in items]})

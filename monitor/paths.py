@@ -51,6 +51,14 @@ def logs_dir() -> Path:
     return _sub("logs")
 
 
+def browser_profile_dir() -> Path:
+    return _sub("browser")
+
+
+def autobuy_dir() -> Path:
+    return _sub("autobuy")
+
+
 def env_file() -> Path:
     return app_dir() / ".env"
 
@@ -61,3 +69,7 @@ def filters_file() -> Path:
 
 def channels_cache_file() -> Path:
     return data_dir() / "channels_cache.json"
+
+
+def autobuy_config_file() -> Path:
+    return data_dir() / "autobuy.json"

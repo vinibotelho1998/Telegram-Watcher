@@ -16,13 +16,16 @@ from qfluentwidgets import (
 )
 
 from monitor import APP_ID, APP_NAME, paths
+from monitor.autobuy.manager import AutobuyManager
+from monitor.autobuy.models import BuyResult, BuyStatus, WatchItem
+from monitor.autobuy.notify import build_message, send_pix_notification
 from monitor.config import AppConfig
 from monitor.engine import MonitorEngine
 from monitor.models import EngineState, Filter, LogLevel
 from monitor.storage import ChannelCache, FilterStore
 
-from .dialogs import CodeDialog, FilterDialog, PasswordDialog
-from .pages import ChannelsPage, ConsolePage, DashboardPage, FiltersPage, SettingsPage
+from .dialogs import CodeDialog, FilterDialog, PasswordDialog, WatchDialog
+from .pages import AutobuyPage, ChannelsPage, ConsolePage, DashboardPage, FiltersPage, SettingsPage
 from .setup_wizard import SetupWizard
 from .theme import apply_theme
 from .tray import SystemTray
@@ -42,6 +45,11 @@ class AppWindow(FluentWindow):
         self.filters: list[Filter] = self.filter_store.load()
         self.channels = self.channel_cache.load()
 
+        self.autobuy = AutobuyManager(
+            on_log=self._on_log,
+            on_result=self._on_autobuy_result,
+        )
+
         self.engine = MonitorEngine(
             self.config,
             lambda: self.filters,
@@ -49,6 +57,7 @@ class AppWindow(FluentWindow):
             on_log=self._on_log,
             on_event=self._on_event,
             on_metrics=self._on_metrics,
+            on_text=self.autobuy.handle_text,
             code_provider=self._request_code,
             password_provider=self._request_password,
         )
@@ -83,12 +92,14 @@ class AppWindow(FluentWindow):
         self.dashboard = DashboardPage(self)
         self.filters_page = FiltersPage(self)
         self.channels_page = ChannelsPage(self)
+        self.autobuy_page = AutobuyPage(self)
         self.console_page = ConsolePage(self)
         self.settings_page = SettingsPage(self)
 
         self.addSubInterface(self.dashboard, FluentIcon.HOME, "Dashboard")
         self.addSubInterface(self.filters_page, FluentIcon.FILTER, "Filtros")
         self.addSubInterface(self.channels_page, FluentIcon.PEOPLE, "Canais")
+        self.addSubInterface(self.autobuy_page, FluentIcon.SHOPPING_CART, "Auto-Compra")
         self.addSubInterface(self.console_page, FluentIcon.COMMAND_PROMPT, "Console")
         self.addSubInterface(
             self.settings_page, FluentIcon.SETTING, "Configurações", position=NavigationItemPosition.BOTTOM
@@ -155,6 +166,30 @@ class AppWindow(FluentWindow):
         dialog.rejected.connect(lambda: resolve(None))
         dialog.show()
         return future
+
+    # ---- auto-compra ----
+
+    async def _on_autobuy_result(self, result: BuyResult) -> None:
+        message = build_message(result)
+        sent = await self.engine.notify_me(message, result.screenshot or None)
+        if not sent:
+            await send_pix_notification(self.config, result)
+        self.autobuy_page.refresh()
+        if result.status == BuyStatus.PIX_READY:
+            self._toast("PIX gerado! Confira a aba Auto-Compra", "success")
+
+    def open_watch_editor(self, item: WatchItem | None) -> None:
+        dialog = WatchDialog(item, self)
+        if not dialog.exec():
+            return
+        self.autobuy.upsert_item(dialog.result_item())
+        self.autobuy_page.refresh()
+        self._toast("Produto salvo", "success")
+
+    def delete_watch_item(self, item_id: str) -> None:
+        self.autobuy.remove_item(item_id)
+        self.autobuy_page.refresh()
+        self._toast("Produto removido", "info")
 
     # ---- filtros ----
 

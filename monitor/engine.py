@@ -26,6 +26,7 @@ StateCb = Callable[[EngineState, str], None]
 LogCb = Callable[[str, LogLevel], None]
 EventCb = Callable[[dict], None]
 MetricsCb = Callable[[], None]
+TextCb = Callable[[str], None]
 CodeProvider = Callable[[str], Awaitable[Optional[str]]]
 PasswordProvider = Callable[[], Awaitable[Optional[str]]]
 
@@ -56,6 +57,7 @@ class MonitorEngine:
         on_log: LogCb | None = None,
         on_event: EventCb | None = None,
         on_metrics: MetricsCb | None = None,
+        on_text: TextCb | None = None,
         code_provider: CodeProvider | None = None,
         password_provider: PasswordProvider | None = None,
     ) -> None:
@@ -65,6 +67,7 @@ class MonitorEngine:
         self._on_log = on_log or _noop
         self._on_event = on_event or _noop
         self._on_metrics = on_metrics or _noop
+        self._on_text = on_text or _noop
         self._code_provider = code_provider
         self._password_provider = password_provider
 
@@ -208,6 +211,10 @@ class MonitorEngine:
         self._on_event({"time": _now(), "source": source, "text": _preview(text), "status": "captured"})
         self._log(f"Capturado de {source}", LogLevel.CAPTURE)
         self._on_metrics()
+        try:
+            self._on_text(text)
+        except Exception:
+            log.exception("Erro no hook de texto")
 
         destinations = resolve_destinations(self._filters(), chat_id, text, self.config.destination_ids)
         if not destinations:
@@ -324,6 +331,18 @@ class MonitorEngine:
         self._set_state(EngineState.OFFLINE)
         self._log("Monitor parado", LogLevel.INFO)
         self._on_metrics()
+
+    async def notify_me(self, message: str, file: str | None = None) -> bool:
+        if self._user is None or not self._user.is_connected():
+            return False
+        try:
+            await self._user.send_message("me", message)
+            if file:
+                await self._user.send_file("me", file)
+            return True
+        except Exception:
+            log.exception("Falha ao enviar notificação")
+            return False
 
     async def sync_channels(self) -> list[Channel]:
         if self._user is None or not self._user.is_connected():

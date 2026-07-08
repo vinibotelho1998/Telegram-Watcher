@@ -20,15 +20,26 @@ monitor/      Núcleo testável, independente de Qt
   detector.py   CouponDetector e avaliação de smart rules
   filtering.py  resolve_destinations, decisão de roteamento
   engine.py     MonitorEngine: Telethon, dedup, rate limit, callbacks
+  autobuy/      Compra automática na KaBuM, separada do monitor
+    models.py     WatchItem (produto vigiado), BuyResult, BuyStatus
+    resolver.py   extração de links e resolução de encurtadores
+    browser.py    Chromium persistente do robô (Playwright)
+    kabum.py      KabumDriver: checkout até gerar o PIX, cupom, métricas
+    manager.py    AutobuyManager: observa capturas, dedupe, dispara compra
+    storage.py    AutobuyStore em data/autobuy.json
+    records.py    registros de PIX gerados para a interface
+    notify.py     notificação nas Mensagens Salvas do Telegram
 ui/           Interface PyQt6
   window.py     AppWindow, orquestra núcleo e telas
-  pages/        dashboard, filters, channels, console, settings
-  dialogs.py    CodeDialog, PasswordDialog, FilterDialog
+  pages/        dashboard, filters, channels, autobuy, console, settings
+  dialogs.py    CodeDialog, PasswordDialog, FilterDialog, WatchDialog
   widgets.py    StatCard, StatusPill, ActivityChart
   theme.py      tema, paleta e tokens
   tray.py       ícone de bandeja
 tests/        Testes pytest do núcleo
 ```
+
+O auto-compra funciona em conjunto com o monitor mas é um componente separado: o motor apenas emite o texto capturado pelo callback genérico `on_text`, e o `AutobuyManager` decide se compra. A compra usa Playwright (`requirements-autobuy.txt` + `playwright install chromium`) com perfil persistente em `%APPDATA%\TelegramMonitorPro\browser`, onde o login na loja é feito uma única vez pela janela real do site (nunca por formulário no app). O fluxo para na geração do código PIX: o pagamento é sempre manual.
 
 A interface conversa com o núcleo apenas pela `AppWindow`, que detém a configuração, os filtros, o cache de canais e o motor. O motor recebe callbacks (`on_state`, `on_log`, `on_event`, `on_metrics`) e provedores assíncronos de código e senha. Como tudo roda no mesmo loop do qasync, os callbacks atualizam a interface diretamente.
 
