@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 
 from ..detector import detect
 from ..models import LogLevel
+from . import journal
 from .models import BuyResult, BuyStatus, ProductInfo, WatchItem
 from .resolver import extract_urls, find_kabum_product, product_id
 from .storage import AutobuySettings, AutobuyStore
@@ -37,7 +38,8 @@ class AutobuyManager:
         on_alert: AlertCb | None = None,
     ) -> None:
         self._store = store or AutobuyStore()
-        self._log = on_log or _noop_log
+        self._on_log_ui = on_log or _noop_log
+        self._store_tag = ""
         self._on_result = on_result
         self._on_captcha = on_captcha
         self._on_alert = on_alert
@@ -49,6 +51,10 @@ class AutobuyManager:
         self.busy_profile = False
         self._watchdog: asyncio.Task | None = None
         self._last_alert: dict[str, float] = {}
+
+    def _log(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
+        journal.write(message, level.value, self._store_tag)
+        self._on_log_ui(message, level)
 
     def save(self) -> bool:
         return self._store.save(self.settings, self.items)
@@ -368,6 +374,8 @@ class AutobuyManager:
             self._log("Playwright não instalado: pip install -r requirements-autobuy.txt", LogLevel.ERROR)
             return None
         mode = "compra real" if confirm else "simulação"
+        self._store_tag = spec.id
+        journal.separator(f"TESTE {mode.upper()} na {spec.label}: {url[:60]}")
         self._log(f"Teste iniciado em {mode} na {spec.label}: {url}", LogLevel.CAPTURE)
         self._busy = True
         try:
@@ -437,6 +445,8 @@ class AutobuyManager:
             self._log("Playwright não instalado: pip install -r requirements-autobuy.txt", LogLevel.ERROR)
             return None
         mode = "compra real" if self.settings.real_mode else "simulação"
+        self._store_tag = spec.id
+        journal.separator(f"PROMO CAPTURADA -> {mode.upper()} na {spec.label}: {url[:60]}")
         self._log(f"Iniciando {mode} na {spec.label}: {url}", LogLevel.INFO)
         async with async_playwright() as playwright:
             context = await open_context(playwright, headless=spec.headless_allowed(self.settings.headless))
