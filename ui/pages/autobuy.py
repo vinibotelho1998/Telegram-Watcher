@@ -625,8 +625,7 @@ class AutobuyPage(PageView):
 
         caminho = journal.log_path()
         if not caminho.exists():
-            caminho.write_text("Nenhuma compra automática registrada ainda.
-", encoding="utf-8")
+            caminho.write_text("Nenhuma compra automática registrada ainda.\n", encoding="utf-8")
         os.startfile(str(caminho))
 
     def _open_folder(self) -> None:
