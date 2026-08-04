@@ -48,6 +48,8 @@ class AppWindow(FluentWindow):
         self.autobuy = AutobuyManager(
             on_log=self._on_log,
             on_result=self._on_autobuy_result,
+            on_captcha=self._on_captcha,
+            on_alert=self._on_autobuy_alert,
         )
 
         self.engine = MonitorEngine(
@@ -72,6 +74,8 @@ class AppWindow(FluentWindow):
                 QTimer.singleShot(900, self.toggle_engine)
         else:
             QTimer.singleShot(500, self.open_setup_wizard)
+
+        QTimer.singleShot(1500, self.autobuy_page.check_all_stores)
 
     def _load_icon(self) -> QIcon:
         icon_path = paths.assets_path("final_icon.ico")
@@ -134,12 +138,14 @@ class AppWindow(FluentWindow):
 
     def toggle_engine(self) -> None:
         if self.engine.is_running:
+            self.autobuy.stop_watchdog()
             self.schedule(self.engine.stop())
             return
         if not self.config.is_ready:
             self.open_setup_wizard()
             return
         self.schedule(self.engine.start())
+        self.autobuy.start_watchdog()
 
     def schedule(self, coro):
         return self._loop.create_task(coro)
@@ -168,6 +174,30 @@ class AppWindow(FluentWindow):
         return future
 
     # ---- auto-compra ----
+
+    def _on_captcha(self) -> None:
+        self.alert("Captcha na tela! Resolva na janela do navegador para o robô continuar.")
+
+    def _on_autobuy_alert(self, message: str) -> None:
+        self.alert(message)
+        self.schedule(self.engine.notify_me(f"[DBX] {message}"))
+
+    def alert(self, message: str) -> None:
+        self._toast(message, "warning")
+        if self._tray is not None:
+            self._tray.notify(APP_NAME, message)
+        self._beep()
+
+    @staticmethod
+    def _beep() -> None:
+        if os.name != "nt":
+            return
+        try:
+            import winsound
+
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
 
     async def _on_autobuy_result(self, result: BuyResult) -> None:
         message = build_message(result)

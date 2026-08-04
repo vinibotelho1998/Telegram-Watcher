@@ -71,9 +71,27 @@ No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
 3. Abra a aba **Canais**, clique em **Sincronizar** e marque cada canal como Origem ou Destino.
 4. Em **Filtros**, crie um novo filtro com palavras ou detecção inteligente.
 
-## Compra automática (KaBuM)
+## Compra automática (KaBuM e Amazon)
 
-Na aba **Auto-Compra** você configura tudo: produtos vigiados (palavras com `+` e `ou`, exclusões e preço máximo à vista), modo simulação ou compra real, uso automático de cupom da mensagem e a conexão com a sua conta KaBuM (login feito na janela real do site, a senha nunca passa pelo app). Quando uma promoção capturada casa com um produto vigiado, o robô valida o preço na página do produto, percorre o checkout, seleciona PIX e para na geração do código, que chega no app e nas suas Mensagens Salvas do Telegram com print e métricas por etapa. O pagamento é sempre seu: pague o PIX ou deixe expirar que o pedido cancela sozinho.
+Na aba **Auto-Compra** você configura tudo sem decorar sintaxe nenhuma. Cada produto vigiado tem três listas de palavras — as que **precisam aparecer**, as **alternativas** (basta uma) e as **proibidas** — montadas clicando, além de preço máximo, preço mínimo de segurança, quantidade e loja. Um campo de teste mostra na hora, em verde ou vermelho, se uma mensagem colada seria aceita e qual palavra bateu ou faltou.
+
+Quando uma promoção capturada casa com um produto vigiado, o robô identifica a loja pelo link, valida o preço na página do produto, percorre o checkout, **seleciona PIX** e para na geração do código, que chega no app e nas suas Mensagens Salvas do Telegram com print e métricas por etapa. O pagamento é sempre seu: pague o PIX ou deixe expirar que o pedido cancela sozinho.
+
+Garantias do robô, em qualquer loja:
+
+- **O pagamento é sempre PIX.** Se a tela de revisão não confirmar PIX, ele não finaliza — importante na Amazon, cujo padrão é cartão de crédito.
+- **Ele nunca paga.** Para no código PIX e entrega pra você.
+- **Captcha não derruba a compra:** o robô apita, traz a janela pra frente e espera você resolver, retomando sozinho depois.
+- **Vigia de sessão:** de tempos em tempos ele confere se a conta da loja continua conectada e avisa com som e Telegram se cair.
+
+O botão **Testar o fluxo de compra** roda tudo isso sob demanda com um produto que você escolher, em três níveis: só consultar preço, simulação até a revisão, ou ir até gerar o PIX.
+
+Para conectar uma conta, use **Conectar conta** na aba, ou:
+
+```bash
+python scripts/autobuy_login.py kabum
+python scripts/autobuy_login.py amazon
+```
 
 Requer o Playwright:
 

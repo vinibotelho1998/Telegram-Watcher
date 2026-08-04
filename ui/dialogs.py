@@ -9,14 +9,16 @@ from qfluentwidgets import (
     LineEdit,
     MessageBoxBase,
     SingleDirectionScrollArea,
-    SpinBox,
     SubtitleLabel,
 )
 
-from monitor.autobuy.models import WatchItem
 from monitor.config import AppConfig
 from monitor.detector import STORES
 from monitor.models import Filter
+
+from .watch_dialog import WatchDialog
+
+__all__ = ["CodeDialog", "FilterDialog", "PasswordDialog", "WatchDialog"]
 
 _SMART_PRESETS: list[tuple[str, str]] = [
     ("Qualquer cupom", "any_coupon"),
@@ -64,86 +66,6 @@ class PasswordDialog(MessageBoxBase):
 
     def password(self) -> str:
         return self.input.text()
-
-
-class WatchDialog(MessageBoxBase):
-    def __init__(self, existing: WatchItem | None = None, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._existing = existing
-        self.viewLayout.setSpacing(10)
-        self.viewLayout.addWidget(SubtitleLabel("Editar produto" if existing else "Novo produto vigiado"))
-
-        self.name_input = LineEdit()
-        self.name_input.setPlaceholderText("ex: RTX 5060")
-        self._add_field("Nome", self.name_input)
-
-        self.include_input = LineEdit()
-        self.include_input.setPlaceholderText("ex: rtx 5060, rtx + 5060 ou 5060ti")
-        self._add_field("Comprar se a mensagem conter (separe por vírgula, + exige junção, ou = alternativas)", self.include_input)
-
-        self.exclude_input = LineEdit()
-        self.exclude_input.setPlaceholderText("ex: 5060 ti, usada, recondicionada")
-        self._add_field("Nunca comprar se conter", self.exclude_input)
-
-        self.price_input = LineEdit()
-        self.price_input.setPlaceholderText("ex: 2300 ou 2.299,90")
-        self._add_field("Preço máximo à vista (R$)", self.price_input)
-
-        self._load(existing)
-        self.yesButton.setText("Salvar")
-        self.cancelButton.setText("Cancelar")
-        self.yesButton.setDisabled(existing is None)
-        self._connect_validation()
-        self.widget.setMinimumWidth(520)
-
-    def _add_field(self, label: str, widget: QWidget) -> None:
-        self.viewLayout.addWidget(CaptionLabel(label))
-        self.viewLayout.addWidget(widget)
-
-    def _connect_validation(self) -> None:
-        for field in (self.name_input, self.include_input, self.price_input):
-            field.textChanged.connect(self._validate)
-        self._validate()
-
-    def _validate(self) -> None:
-        valid = bool(self.name_input.text().strip()) and bool(self.include_input.text().strip())
-        valid = valid and self._parse_price(self.price_input.text()) > 0
-        self.yesButton.setEnabled(valid)
-
-    def _load(self, existing: WatchItem | None) -> None:
-        if not existing:
-            return
-        self.name_input.setText(existing.name)
-        self.include_input.setText(", ".join(existing.include))
-        self.exclude_input.setText(", ".join(existing.exclude))
-        self.price_input.setText(f"{existing.max_price:.2f}".replace(".", ","))
-
-    @staticmethod
-    def _parse_price(text: str) -> float:
-        clean = text.replace("R$", "").strip()
-        if "," in clean:
-            clean = clean.replace(".", "").replace(",", ".")
-        try:
-            return float(clean)
-        except ValueError:
-            return 0.0
-
-    @staticmethod
-    def _split(text: str) -> list[str]:
-        return [part.strip() for part in text.split(",") if part.strip()]
-
-    def result_item(self) -> WatchItem:
-        base = self._existing or WatchItem.new()
-        return WatchItem(
-            id=base.id,
-            name=self.name_input.text().strip() or "Sem nome",
-            max_price=self._parse_price(self.price_input.text()),
-            include=self._split(self.include_input.text()),
-            exclude=self._split(self.exclude_input.text()),
-            quantity=base.quantity,
-            enabled=base.enabled,
-            store=base.store,
-        )
 
 
 class FilterDialog(MessageBoxBase):

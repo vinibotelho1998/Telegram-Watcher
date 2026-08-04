@@ -12,6 +12,7 @@ class BuyStatus(str, Enum):
     PIX_READY = "pix_ready"
     DRY_RUN_OK = "dry_run_ok"
     PRICE_ABOVE_LIMIT = "price_above_limit"
+    PRICE_BELOW_FLOOR = "price_below_floor"
     UNAVAILABLE = "unavailable"
     NOT_FOUND = "not_found"
     LOGIN_REQUIRED = "login_required"
@@ -28,7 +29,9 @@ class WatchItem:
     exclude: list[str] = field(default_factory=list)
     quantity: int = 1
     enabled: bool = True
-    store: str = "kabum"
+    store: str = ""
+    min_price: float = 0.0
+    disable_after_buy: bool = True
 
     @classmethod
     def new(cls, name: str = "", max_price: float = 0.0) -> "WatchItem":
@@ -42,9 +45,11 @@ class WatchItem:
             max_price=float(raw.get("max_price") or 0.0),
             include=[str(x) for x in (raw.get("include") or [])],
             exclude=[str(x) for x in (raw.get("exclude") or [])],
-            quantity=int(raw.get("quantity") or 1),
+            quantity=max(1, int(raw.get("quantity") or 1)),
             enabled=bool(raw.get("enabled", True)),
-            store=str(raw.get("store") or "kabum"),
+            store=str(raw.get("store") or ""),
+            min_price=float(raw.get("min_price") or 0.0),
+            disable_after_buy=bool(raw.get("disable_after_buy", True)),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -57,6 +62,8 @@ class WatchItem:
             "quantity": self.quantity,
             "enabled": self.enabled,
             "store": self.store,
+            "min_price": self.min_price,
+            "disable_after_buy": self.disable_after_buy,
         }
 
     def matches(self, text: str) -> bool:
