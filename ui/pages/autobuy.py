@@ -96,8 +96,14 @@ class AutobuyPage(PageView):
         folder_btn.setIcon(FluentIcon.FOLDER)
         folder_btn.clicked.connect(self._open_folder)
 
+        log_btn = TransparentPushButton("Ver log")
+        log_btn.setIcon(FluentIcon.DOCUMENT)
+        log_btn.setToolTip("Histórico completo das compras automáticas")
+        log_btn.clicked.connect(self._open_log)
+
         self.add_header_widget(self.master_switch)
         self.add_header_widget(new_btn)
+        self.add_header_widget(log_btn)
         self.add_header_widget(folder_btn)
 
         area, self._list = make_vscroll()
@@ -613,6 +619,15 @@ class AutobuyPage(PageView):
     def _open_file(self, path: str) -> None:
         if Path(path).exists():
             os.startfile(path)
+
+    def _open_log(self) -> None:
+        from monitor.autobuy import journal
+
+        caminho = journal.log_path()
+        if not caminho.exists():
+            caminho.write_text("Nenhuma compra automática registrada ainda.
+", encoding="utf-8")
+        os.startfile(str(caminho))
 
     def _open_folder(self) -> None:
         os.startfile(str(paths.autobuy_dir()))
