@@ -127,6 +127,14 @@ class AutobuyManager:
             return coupon.code
         return ""
 
+    async def _context_for(self, playwright, spec, headless: bool):
+        from .browser import open_context, open_real_chrome
+
+        if getattr(spec, "needs_real_chrome", False):
+            self._log(f"{spec.label} exige o Chrome do sistema, abrindo janela real", LogLevel.INFO)
+            return await open_real_chrome(playwright, spec.home_url)
+        return await open_context(playwright, headless=headless)
+
     def account(self, store_id: str) -> str | None:
         return self.accounts.get(store_id)
 
@@ -170,7 +178,7 @@ class AutobuyManager:
             return None
         try:
             async with async_playwright() as playwright:
-                context = await open_context(playwright, headless=spec.headless_allowed(True))
+                context = await self._context_for(playwright, spec, spec.headless_allowed(True))
                 try:
                     page = await context.new_page()
                     await page.goto(spec.home_url, wait_until="domcontentloaded", timeout=45000)
@@ -325,7 +333,7 @@ class AutobuyManager:
         self._busy = True
         try:
             async with async_playwright() as playwright:
-                context = await open_context(playwright, headless=spec.headless_allowed(True))
+                context = await self._context_for(playwright, spec, spec.headless_allowed(True))
                 try:
                     driver = spec.driver(
                         context,
@@ -380,7 +388,7 @@ class AutobuyManager:
         self._busy = True
         try:
             async with async_playwright() as playwright:
-                context = await open_context(playwright, headless=spec.headless_allowed(headless))
+                context = await self._context_for(playwright, spec, spec.headless_allowed(headless))
                 try:
                     driver = spec.driver(
                         context,
@@ -449,7 +457,7 @@ class AutobuyManager:
         journal.separator(f"PROMO CAPTURADA -> {mode.upper()} na {spec.label}: {url[:60]}")
         self._log(f"Iniciando {mode} na {spec.label}: {url}", LogLevel.INFO)
         async with async_playwright() as playwright:
-            context = await open_context(playwright, headless=spec.headless_allowed(self.settings.headless))
+            context = await self._context_for(playwright, spec, spec.headless_allowed(self.settings.headless))
             try:
                 driver = spec.driver(
                     context,
