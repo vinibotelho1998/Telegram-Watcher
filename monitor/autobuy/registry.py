@@ -129,7 +129,6 @@ STORES: dict[str, StoreSpec] = {
         login_url="https://www.pichau.com.br/customer/account/login",
         home_url="https://www.pichau.com.br",
         user_script=_PICHAU_USER_SCRIPT,
-        can_checkout=False,
         session_cookies=("PHPSESSID", "pichau_customer"),
         cookie_domain="pichau",
         needs_real_chrome=True,
