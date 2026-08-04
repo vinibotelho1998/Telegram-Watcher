@@ -48,6 +48,17 @@ _CART_URL = "https://www.pichau.com.br/checkout/cart"
 
 _UNAVAILABLE = ("indisponivel", "esgotado", "sem estoque", "avise-me", "produto indisponivel")
 _CAPTCHA_HINTS = ("verificando seu navegador", "checking your browser", "verificacao de seguranca")
+_CAPTCHA_FRAMES = (
+    "iframe[src*='recaptcha/api2/bframe']",
+    "iframe[src*='recaptcha/enterprise/bframe']",
+    "iframe[src*='hcaptcha']",
+    "iframe[title*='desafio' i]",
+    "iframe[title*='challenge' i]",
+)
+_CAPTCHA_MIN_SIZE = 120
+_CART_ITEM_COUNT = (
+    "() => document.querySelectorAll(\"[class*='cart-item'],[class*='cartItem'],tr[class*='item']\").length"
+)
 
 _HUMAN_WAIT_SECONDS = 180.0
 
@@ -294,9 +305,23 @@ class PichauDriver:
         await asyncio.sleep(4.0)
         if self._session_lost(page):
             return self._login_required(product)
+
+        if await self._captcha_visivel(page):
+            if not await self._esperar_humano(page, "A Pichau pediu captcha para gerar o PIX"):
+                shot = await self._screenshot(page, "captcha-no-pix")
+                detail = (
+                    "A Pichau pediu captcha na hora de gerar o PIX e ele não foi resolvido. "
+                    "Confira em Meus Pedidos se o pedido chegou a ser criado"
+                )
+                return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
+
         code = await pix.wait_for(page)
         if code:
             return await self._pix_result(page, product, code, stopwatch)
+        if await self._captcha_visivel(page):
+            shot = await self._screenshot(page, "captcha-no-pix")
+            detail = "Captcha apareceu enquanto o PIX era gerado; confira a janela do navegador"
+            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
         shot = await self._screenshot(page, "sem-codigo")
         detail = "Pedido finalizado mas o código PIX não foi localizado, confira o screenshot"
         return BuyResult(status=BuyStatus.FAILED, product=product, screenshot=shot, detail=detail)
@@ -315,15 +340,46 @@ class PichauDriver:
             await asyncio.sleep(4.0)
         except Exception:
             return
+        antes = await self._itens_no_carrinho(page)
+        if antes == 0:
+            self._log("Carrinho da Pichau já estava vazio")
+            return
         botao = await find_clickable(page, _CLEAR_CART)
         if botao is None:
+            self._log(f"Carrinho tem {antes} item(ns) e o botão de limpar não foi encontrado")
             return
         try:
             await botao.click(timeout=8000)
-            await asyncio.sleep(3.0)
-            self._log("Carrinho da Pichau esvaziado antes da compra")
+            await asyncio.sleep(2.5)
         except Exception:
-            pass
+            self._log("Falha ao clicar em limpar carrinho")
+            return
+        confirmar = await find_clickable(page, (r"^\s*(sim|confirmar|limpar|ok)\s*$",))
+        if confirmar is not None:
+            try:
+                await confirmar.click(timeout=6000)
+                await asyncio.sleep(2.5)
+            except Exception:
+                pass
+        await page.reload(wait_until="domcontentloaded", timeout=45000)
+        await asyncio.sleep(3.5)
+        depois = await self._itens_no_carrinho(page)
+        if depois == 0:
+            self._log(f"Carrinho da Pichau esvaziado ({antes} item(ns) removidos)")
+        else:
+            self._log(f"ATENÇÃO: carrinho ainda tem {depois} item(ns); o pedido pode sair com item extra")
+
+    async def _itens_no_carrinho(self, page: Page) -> int:
+        try:
+            texto = await page_text(page)
+            achado = re.search(r"meu\s+carrinho\s*\|?\s*(\d+)", normalize(texto))
+            if achado:
+                return int(achado.group(1))
+            if "carrinho esta vazio" in normalize(texto) or "carrinho vazio" in normalize(texto):
+                return 0
+            return int(await page.evaluate(_CART_ITEM_COUNT))
+        except Exception:
+            return -1
 
     async def _ensure_shipping(self, page: Page) -> None:
         try:
@@ -345,6 +401,7 @@ class PichauDriver:
                 self._log("Opção PIX não encontrada na tela de pagamento")
                 return False
             if await radio.is_checked():
+                self._log("Forma de pagamento PIX ja estava selecionada")
                 return True
             await radio.scroll_into_view_if_needed(timeout=8000)
         except Exception:
@@ -430,7 +487,46 @@ class PichauDriver:
         self._log("Código PIX capturado")
         return result
 
+    async def _captcha_visivel(self, page: Page) -> bool:
+        for seletor in _CAPTCHA_FRAMES:
+            try:
+                quadro = page.locator(seletor).first
+                if await quadro.count() == 0 or not await quadro.is_visible():
+                    continue
+                caixa = await quadro.bounding_box()
+            except Exception:
+                continue
+            if caixa and caixa["width"] >= _CAPTCHA_MIN_SIZE and caixa["height"] >= _CAPTCHA_MIN_SIZE:
+                return True
+        texto = normalize(await page_text(page))
+        return any(hint in texto for hint in _CAPTCHA_HINTS)
+
+    async def _esperar_humano(self, page: Page, motivo: str) -> bool:
+        self._log(f"{motivo}: resolva na janela do navegador, o robô continua sozinho depois")
+        if self._on_captcha is not None:
+            try:
+                self._on_captcha()
+            except Exception:
+                pass
+        try:
+            await page.bring_to_front()
+        except Exception:
+            pass
+        limite = time.monotonic() + _HUMAN_WAIT_SECONDS
+        while time.monotonic() < limite:
+            await asyncio.sleep(2.0)
+            if not await self._captcha_visivel(page):
+                self._log("Verificação resolvida, retomando")
+                return True
+        self._log("A verificação não foi resolvida a tempo")
+        return False
+
     async def _handle_captcha(self, page: Page) -> bool:
+        if not await self._captcha_visivel(page):
+            return True
+        return await self._esperar_humano(page, "Verificação de segurança na tela")
+
+    async def _handle_captcha_legado(self, page: Page) -> bool:
         texto = normalize(await page_text(page))
         if not any(hint in texto for hint in _CAPTCHA_HINTS):
             return True
