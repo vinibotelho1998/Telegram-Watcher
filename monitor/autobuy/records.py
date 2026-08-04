@@ -21,21 +21,24 @@ class PixRecord:
     created_at: str
     elapsed: float = 0.0
     timings: dict[str, float] = field(default_factory=dict)
+    store: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "PixRecord":
         raw_timings = raw.get("timings") or {}
+        url = str(raw.get("url") or "")
         return cls(
             stamp=str(raw.get("stamp") or ""),
             title=str(raw.get("title") or "Sem título"),
             price=float(raw.get("price") or 0.0),
-            url=str(raw.get("url") or ""),
+            url=url,
             pix_code=str(raw.get("pix_code") or ""),
             screenshot=str(raw.get("screenshot") or ""),
             status=str(raw.get("status") or ""),
             created_at=str(raw.get("created_at") or ""),
             elapsed=float(raw.get("elapsed") or 0.0),
             timings={str(key): float(value) for key, value in raw_timings.items()},
+            store=str(raw.get("store") or "") or _store_from_url(url),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -50,23 +53,36 @@ class PixRecord:
             "created_at": self.created_at,
             "elapsed": self.elapsed,
             "timings": self.timings,
+            "store": self.store,
         }
 
 
-def save_record(result: BuyResult, stamp: str | None = None) -> PixRecord:
+def _store_from_url(url: str) -> str:
+    from . import urls
+
+    if urls.kabum_owns(url):
+        return "kabum"
+    if urls.amazon_owns(url):
+        return "amazon"
+    return ""
+
+
+def save_record(result: BuyResult, stamp: str | None = None, store: str = "") -> PixRecord:
     stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
     product = result.product
+    url = product.url if product else ""
     record = PixRecord(
         stamp=stamp,
         title=product.title if product else "Sem título",
         price=product.pix_price if product else 0.0,
-        url=product.url if product else "",
+        url=url,
         pix_code=result.pix_code,
         screenshot=result.screenshot,
         status=result.status.value,
         created_at=time.strftime("%d/%m/%Y %H:%M"),
         elapsed=round(result.elapsed, 1),
         timings=dict(result.timings),
+        store=store or _store_from_url(url),
     )
     path = paths.autobuy_dir() / f"{stamp}-pix.json"
     path.write_text(json.dumps(record.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -86,12 +102,14 @@ def delete_record(stamp: str) -> int:
     return removed
 
 
-def load_records(limit: int = 50) -> list[PixRecord]:
+def load_records(limit: int = 50, store: str = "") -> list[PixRecord]:
     records: list[PixRecord] = []
     for path in paths.autobuy_dir().glob("*-pix.json"):
         try:
             records.append(PixRecord.from_dict(json.loads(path.read_text(encoding="utf-8"))))
         except (json.JSONDecodeError, OSError, ValueError):
             continue
+    if store:
+        records = [record for record in records if record.store == store]
     records.sort(key=lambda record: record.stamp, reverse=True)
     return records[:limit]

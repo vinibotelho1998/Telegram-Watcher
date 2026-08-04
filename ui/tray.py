@@ -40,6 +40,12 @@ class SystemTray(QSystemTrayIcon):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._on_open()
 
+    def notify(self, title: str, message: str) -> None:
+        try:
+            self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 8000)
+        except Exception:
+            pass
+
     def set_state(self, state: EngineState) -> None:
         running = state in (EngineState.ONLINE, EngineState.CONNECTING, EngineState.AUTH)
         self._toggle_action.setText("Parar monitor" if running else "Iniciar monitor")

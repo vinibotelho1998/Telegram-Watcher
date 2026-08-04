@@ -9,25 +9,17 @@ from collections.abc import Callable
 from playwright.async_api import BrowserContext, Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
+from . import pix
 from .. import paths
 from ..matching import normalize
 from .models import BuyResult, BuyStatus, ProductInfo
 from .records import save_record
 
 LogCb = Callable[[str], None]
+CaptchaCb = Callable[[], None]
 
-_PIX_CODE = re.compile(r"000201.{20,600}?6304[0-9A-Za-z]{4}", re.DOTALL)
-_PIX_MARKER = "bcb.pix"
-
-
-def _clean_pix(raw: str) -> str:
-    if not raw:
-        return ""
-    match = _PIX_CODE.search(raw)
-    if not match:
-        return ""
-    code = re.sub(r"[\r\n]+", "", match.group(0)).strip()
-    return code if _PIX_MARKER in code.lower() else ""
+STORE_ID = "kabum"
+STORE_LABEL = "KaBuM!"
 _CONTINUE_TESTIDS = ("[data-testid='button-cart']", "[data-testid='button-continue']")
 _CONTINUE_PATTERNS = (
     r"^\s*continuar\s*$",
@@ -40,10 +32,23 @@ _FINALIZE_PATTERNS = (
     r"^\s*fazer\s+pedido\s*$",
 )
 _CONSENT_SELECTORS = ("#adopt-reject-all-button", "#adopt-accept-all-button")
+_REMOVE_BUTTON = "button[id^='remove-button-']"
+_QUANTITY_INPUT = "input[id^='quantity-'], input[aria-label='Quantidade']"
+_QUANTITY_PLUS = "button[aria-label*='aumentar quantidade' i], button[aria-label*='aumentar' i]"
+_CAPTCHA_SELECTORS = (
+    "iframe[src*='recaptcha/api2/bframe']",
+    "iframe[src*='hcaptcha']",
+    "iframe[title*='desafio' i]",
+    "iframe[title*='challenge' i]",
+    "#challenge-form",
+    "#cf-challenge-running",
+)
 _MAX_CHECKOUT_STEPS = 20
 _MAX_STUCK_RETRIES = 3
 _PIX_WAIT_SECONDS = 90.0
 _PAGE_READY_SECONDS = 20.0
+_CAPTCHA_MIN_SIZE = 120
+_HUMAN_WAIT_SECONDS = 180.0
 
 
 def _slug(value: str) -> str:
@@ -75,20 +80,40 @@ class _Stopwatch:
 
 
 class KabumDriver:
-    def __init__(self, context: BrowserContext, on_log: LogCb | None = None) -> None:
+    def __init__(
+        self,
+        context: BrowserContext,
+        on_log: LogCb | None = None,
+        on_captcha: CaptchaCb | None = None,
+    ) -> None:
         self._context = context
         self._log = on_log or (lambda _message: None)
+        self._on_captcha = on_captcha
         self._coupon = ""
         self._coupon_note = ""
+        self._quantity = 1
+        self._quantity_done = False
+        self._cart_cleared = False
 
-    async def buy(self, url: str, max_price: float, confirm: bool = False, coupon: str = "") -> BuyResult:
+    async def buy(
+        self,
+        url: str,
+        max_price: float,
+        confirm: bool = False,
+        coupon: str = "",
+        min_price: float = 0.0,
+        quantity: int = 1,
+    ) -> BuyResult:
         started = time.monotonic()
         stopwatch = _Stopwatch()
         self._coupon = coupon.strip().upper()
         self._coupon_note = ""
+        self._quantity = max(1, quantity)
+        self._quantity_done = False
+        self._cart_cleared = False
         page = await self._context.new_page()
         try:
-            result = await self._run(page, url, max_price, confirm, stopwatch)
+            result = await self._run(page, url, max_price, min_price, confirm, stopwatch)
         except PlaywrightTimeout as exc:
             result = BuyResult(status=BuyStatus.FAILED, detail=f"Tempo esgotado: {exc}")
         except Exception as exc:
@@ -126,7 +151,15 @@ class KabumDriver:
             seller=str(product.get("sellerName") or ""),
         )
 
-    async def _run(self, page: Page, url: str, max_price: float, confirm: bool, stopwatch: _Stopwatch) -> BuyResult:
+    async def _run(
+        self,
+        page: Page,
+        url: str,
+        max_price: float,
+        min_price: float,
+        confirm: bool,
+        stopwatch: _Stopwatch,
+    ) -> BuyResult:
         product = await self.fetch_product(page, url)
         if product is None:
             return BuyResult(status=BuyStatus.NOT_FOUND, detail="Dados do produto não encontrados na página")
@@ -137,6 +170,9 @@ class KabumDriver:
         if max_price > 0 and product.pix_price > max_price:
             detail = f"R$ {product.pix_price:.2f} acima do limite R$ {max_price:.2f}"
             return BuyResult(status=BuyStatus.PRICE_ABOVE_LIMIT, product=product, detail=detail)
+        if min_price > 0 and product.pix_price < min_price:
+            detail = f"R$ {product.pix_price:.2f} abaixo do piso R$ {min_price:.2f}, parece anúncio suspeito"
+            return BuyResult(status=BuyStatus.PRICE_BELOW_FLOOR, product=product, detail=detail)
         await self._dismiss_consent(page)
         await page.click("#purchase", timeout=15000)
         await page.wait_for_url("**/precarrinho/**", timeout=20000)
@@ -185,9 +221,16 @@ class KabumDriver:
                 last_path = path
                 self._log(f"Etapa: {path}")
             await self._dismiss_consent(page)
+            if not await self._handle_captcha(page):
+                shot = await self._screenshot(page, "captcha")
+                detail = "Captcha bloqueou o checkout e não foi resolvido a tempo"
+                return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
             if await self._needs_login(page):
-                detail = "Sessão não logada: rode scripts/autobuy_login.py e tente de novo"
+                detail = "Sessão não logada: conecte a conta na aba Auto-Compra e tente de novo"
                 return BuyResult(status=BuyStatus.LOGIN_REQUIRED, product=product, detail=detail)
+            if "/carrinho" in page.url:
+                await self._clear_other_items(page, product.id)
+                await self._set_quantity(page)
             code = await self._extract_pix(page)
             if code:
                 stopwatch.lap(_step_name(path))
@@ -272,6 +315,102 @@ class KabumDriver:
                 return
             await asyncio.sleep(1.0)
 
+    async def _captcha_present(self, page: Page) -> bool:
+        for selector in _CAPTCHA_SELECTORS:
+            try:
+                locator = page.locator(selector).first
+                if await locator.count() == 0 or not await locator.is_visible():
+                    continue
+                box = await locator.bounding_box()
+            except Exception:
+                continue
+            if box is None:
+                continue
+            if box["width"] >= _CAPTCHA_MIN_SIZE and box["height"] >= _CAPTCHA_MIN_SIZE:
+                return True
+        return False
+
+    async def _handle_captcha(self, page: Page) -> bool:
+        if not await self._captcha_present(page):
+            return True
+        self._log("Captcha na tela: resolva na janela do navegador, o robô continua sozinho depois")
+        if self._on_captcha is not None:
+            try:
+                self._on_captcha()
+            except Exception:
+                pass
+        try:
+            await page.bring_to_front()
+        except Exception:
+            pass
+        deadline = time.monotonic() + _HUMAN_WAIT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(2.0)
+            if not await self._captcha_present(page):
+                self._log("Captcha resolvido, retomando o checkout")
+                return True
+        self._log("Captcha não foi resolvido a tempo")
+        return False
+
+    async def _clear_other_items(self, page: Page, keep_id: int) -> None:
+        if self._cart_cleared:
+            return
+        self._cart_cleared = True
+        manter = f"remove-button-{keep_id}"
+        removidos = 0
+        for _ in range(12):
+            alvo = None
+            botoes = page.locator(_REMOVE_BUTTON)
+            try:
+                total = await botoes.count()
+            except Exception:
+                return
+            for index in range(total):
+                candidato = botoes.nth(index)
+                try:
+                    if await candidato.get_attribute("id") != manter and await candidato.is_visible():
+                        alvo = candidato
+                        break
+                except Exception:
+                    continue
+            if alvo is None:
+                break
+            try:
+                await alvo.click(timeout=8000)
+                removidos += 1
+                await asyncio.sleep(1.5)
+                await self._wait_page_ready(page)
+            except Exception:
+                break
+        if removidos:
+            self._log(f"Carrinho limpo: {removidos} item(ns) que não eram da promoção foram removidos")
+
+    async def _set_quantity(self, page: Page) -> None:
+        if self._quantity <= 1 or self._quantity_done:
+            return
+        self._quantity_done = True
+        try:
+            button = page.locator(_QUANTITY_PLUS).first
+            if await button.count() > 0 and await button.is_visible():
+                for _ in range(self._quantity - 1):
+                    await button.click(timeout=5000)
+                    await asyncio.sleep(1.0)
+                atual = await self._read_quantity(page)
+                self._log(f"Quantidade ajustada para {atual or self._quantity}")
+                return
+        except Exception:
+            pass
+        self._log(f"Botão de quantidade não encontrado, seguindo com 1 unidade (pedido: {self._quantity})")
+
+    async def _read_quantity(self, page: Page) -> str:
+        try:
+            field = page.locator(_QUANTITY_INPUT).first
+            if await field.count() > 0:
+                return (await field.input_value()).strip()
+        except Exception:
+            pass
+        return ""
+
     async def _dismiss_consent(self, page: Page) -> None:
         for selector in _CONSENT_SELECTORS:
             try:
@@ -347,53 +486,10 @@ class KabumDriver:
         return True
 
     async def _extract_pix(self, page: Page) -> str:
-        code = await self._pix_from_copy_button(page)
-        if code:
-            return code
-        try:
-            values = await page.eval_on_selector_all(
-                "input, textarea", "els => els.map(e => e.value || '')"
-            )
-        except Exception:
-            values = []
-        for value in values:
-            code = _clean_pix(value)
-            if code:
-                return code
-        try:
-            text = await page.evaluate("() => document.body ? document.body.innerText : ''")
-        except Exception:
-            return ""
-        return _clean_pix(text or "")
-
-    async def _pix_from_copy_button(self, page: Page) -> str:
-        button = await self._find_button(page, (r"copiar\s+c[oó]digo\s+pix",))
-        if button is None:
-            locator = page.get_by_text(re.compile(r"copiar\s+c[oó]digo\s+pix", re.IGNORECASE)).first
-            try:
-                if await locator.count() > 0 and await locator.is_visible():
-                    button = locator
-            except Exception:
-                button = None
-        if button is None:
-            return ""
-        try:
-            await page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-            await button.click(timeout=5000)
-            await asyncio.sleep(0.6)
-            value = await page.evaluate("() => navigator.clipboard.readText()")
-        except Exception:
-            return ""
-        return _clean_pix(value or "")
+        return await pix.extract(page)
 
     async def _wait_pix(self, page: Page, timeout: float = _PIX_WAIT_SECONDS) -> str:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            code = await self._extract_pix(page)
-            if code:
-                return code
-            await asyncio.sleep(2.0)
-        return ""
+        return await pix.wait_for(page, timeout)
 
     async def _pix_result(self, page: Page, product: ProductInfo, code: str, stopwatch: _Stopwatch) -> BuyResult:
         stopwatch.lap("pix")
@@ -408,7 +504,7 @@ class KabumDriver:
             elapsed=round(stopwatch.total(), 1),
             timings=dict(stopwatch.laps),
         )
-        save_record(result, stamp)
+        save_record(result, stamp, STORE_ID)
         self._save_pix(product, code, stamp)
         self._log("Código PIX capturado")
         return result

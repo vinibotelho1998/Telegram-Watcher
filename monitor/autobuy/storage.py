@@ -14,6 +14,8 @@ class AutobuySettings:
     enabled: bool = False
     real_mode: bool = False
     use_coupon: bool = True
+    headless: bool = False
+    check_hours: int = 6
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "AutobuySettings":
@@ -21,10 +23,18 @@ class AutobuySettings:
             enabled=bool(raw.get("enabled", False)),
             real_mode=bool(raw.get("real_mode", False)),
             use_coupon=bool(raw.get("use_coupon", True)),
+            headless=bool(raw.get("headless", False)),
+            check_hours=max(1, int(raw.get("check_hours") or 6)),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {"enabled": self.enabled, "real_mode": self.real_mode, "use_coupon": self.use_coupon}
+        return {
+            "enabled": self.enabled,
+            "real_mode": self.real_mode,
+            "use_coupon": self.use_coupon,
+            "headless": self.headless,
+            "check_hours": self.check_hours,
+        }
 
 
 class AutobuyStore:

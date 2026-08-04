@@ -45,9 +45,26 @@ def test_watch_item_disabled():
 
 
 def test_watch_item_roundtrip():
-    item = WatchItem(id="w4", name="SSD", max_price=350.5, include=["ssd + 1tb"], exclude=["sata"])
+    item = WatchItem(
+        id="w4",
+        name="SSD",
+        max_price=350.5,
+        include=["ssd + 1tb"],
+        exclude=["sata"],
+        min_price=80.0,
+        quantity=2,
+        disable_after_buy=False,
+    )
     clone = WatchItem.from_dict(item.to_dict())
     assert clone == item
+
+
+def test_watch_item_defaults_from_legacy_dict():
+    item = WatchItem.from_dict({"id": "w5", "name": "Antigo", "max_price": 100.0, "include": ["rtx"]})
+    assert item.min_price == 0.0
+    assert item.quantity == 1
+    assert item.disable_after_buy is True
+    assert item.store == ""
 
 
 def test_build_message_pix():
@@ -145,3 +162,13 @@ def test_manager_pick_coupon(tmp_path):
     assert manager.pick_coupon("RTX 5060 com cupom: MELI50 só hoje") == "MELI50"
     manager.set_use_coupon(False)
     assert manager.pick_coupon("RTX 5060 com cupom: MELI50 só hoje") == ""
+
+
+def test_watch_item_defaults_to_any_store():
+    item = WatchItem.new("SSD barato")
+    assert item.store == ""
+
+
+def test_watch_item_legacy_dict_without_store_accepts_all():
+    item = WatchItem.from_dict({"id": "w9", "name": "X", "max_price": 10.0, "include": ["ssd"]})
+    assert item.store == ""
