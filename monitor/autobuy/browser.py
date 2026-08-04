@@ -134,6 +134,81 @@ async def close_context(context: BrowserContext) -> None:
         await context.close()
     except Exception:
         pass
+    close_real_chrome()
+
+
+_CHROME_PATHS = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+)
+
+_cdp_process = None
+
+
+def system_chrome() -> str | None:
+    import shutil
+
+    for caminho in _CHROME_PATHS:
+        if Path(caminho).exists():
+            return caminho
+    return shutil.which("chrome")
+
+
+def cdp_profile_dir() -> Path:
+    alvo = paths.app_dir() / "browser_real"
+    alvo.mkdir(parents=True, exist_ok=True)
+    return alvo
+
+
+async def open_real_chrome(playwright: Playwright, url: str = "about:blank") -> BrowserContext:
+    global _cdp_process
+    import socket
+    import subprocess
+
+    chrome = system_chrome()
+    if not chrome:
+        raise ProfileInUse(
+            "Esta loja exige o Google Chrome instalado no sistema, e ele não foi encontrado."
+        )
+    with socket.socket() as sonda:
+        sonda.bind(("127.0.0.1", 0))
+        porta = sonda.getsockname()[1]
+    _cdp_process = subprocess.Popen(
+        [
+            chrome,
+            f"--remote-debugging-port={porta}",
+            f"--user-data-dir={cdp_profile_dir()}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--lang=pt-BR",
+            "--accept-lang=pt-BR,pt",
+            url,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    import asyncio
+
+    ultimo = None
+    for _ in range(12):
+        await asyncio.sleep(1.5)
+        try:
+            navegador = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{porta}", timeout=8000)
+            return navegador.contexts[0]
+        except Exception as exc:
+            ultimo = exc
+    raise ProfileInUse(f"Não consegui conectar ao Chrome do sistema: {ultimo}")
+
+
+def close_real_chrome() -> None:
+    global _cdp_process
+    if _cdp_process is None:
+        return
+    try:
+        _cdp_process.terminate()
+    except Exception:
+        pass
+    _cdp_process = None
 
 
 async def open_context(playwright: Playwright, headless: bool = True) -> BrowserContext:

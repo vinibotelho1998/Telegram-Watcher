@@ -24,6 +24,7 @@ _AMAZON_USER_SCRIPT = (
     "() => (document.querySelector('#nav-link-accountList-nav-line-1') || {}).textContent || ''"
 )
 _TERABYTE_USER_SCRIPT = "() => document.body ? document.body.innerText.slice(0, 3000) : ''"
+_PICHAU_USER_SCRIPT = "() => document.body ? document.body.innerText.slice(0, 3000) : ''"
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,7 @@ class StoreSpec:
     requires_window: bool = False
     session_cookies: tuple[str, ...] = ()
     cookie_domain: str = ""
+    needs_real_chrome: bool = False
 
     def headless_allowed(self, preferido: bool) -> bool:
         return preferido and not self.requires_window
@@ -52,6 +54,10 @@ class StoreSpec:
             from .terabyte import TerabyteDriver
 
             return TerabyteDriver(context, on_log=on_log, on_captcha=on_captcha)
+        if self.id == "pichau":
+            from .pichau import PichauDriver
+
+            return PichauDriver(context, on_log=on_log, on_captcha=on_captcha)
         from .amazon import AmazonDriver
 
         return AmazonDriver(context, on_log=on_log, on_captcha=on_captcha)
@@ -114,6 +120,19 @@ STORES: dict[str, StoreSpec] = {
         requires_window=True,
         session_cookies=("PHPSESSID",),
         cookie_domain="terabyte",
+    ),
+    "pichau": StoreSpec(
+        id="pichau",
+        label="Pichau",
+        owns=urls.pichau_owns,
+        canonical=urls.pichau_canonical,
+        login_url="https://www.pichau.com.br/customer/account/login",
+        home_url="https://www.pichau.com.br",
+        user_script=_PICHAU_USER_SCRIPT,
+        can_checkout=False,
+        session_cookies=("PHPSESSID", "pichau_customer"),
+        cookie_domain="pichau",
+        needs_real_chrome=True,
     ),
 }
 
