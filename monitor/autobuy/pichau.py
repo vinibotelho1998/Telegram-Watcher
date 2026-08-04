@@ -8,6 +8,7 @@ from collections.abc import Callable
 from playwright.async_api import BrowserContext, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
+from . import pix
 from .. import paths
 from ..matching import normalize
 from .dom import click_first, find_clickable, page_text
@@ -20,7 +21,20 @@ CaptchaCb = Callable[[], None]
 STORE_ID = "pichau"
 STORE_LABEL = "Pichau"
 
-CAN_CHECKOUT = False
+CAN_CHECKOUT = True
+
+_CART_ADD = "https://www.pichau.com.br/cart?sku={sku}"
+_CART_PAGE = "https://www.pichau.com.br/cart"
+_CHECKOUT_URL = "https://www.pichau.com.br/checkout"
+_CLEAR_CART = (r"limpar\s+carrinho",)
+_FINALIZE = (r"finalizar\s+pedido",)
+_PIX_RADIO = "input[type=radio][value='mercadopago_custom_pix']"
+_SHIPPING_RADIO = "input[type=radio][value^='intelipost_']"
+_TERMS_TEXT = r"concordo\s+com\s+os\s+termos"
+_COUPON_FIELD = "input[placeholder*='cupom' i], input[name*='coupon' i]"
+_COUPON_APPLY = (r"^\s*aplicar\s*$",)
+_COUPON_REJECTED = ("invalido", "nao e valido", "expirado", "nao encontrado", "not valid")
+_LOST_SESSION = ("/customer/account/login", "/login")
 
 _PRICE_PIX = "[class*='price_vista']"
 _PRICE_READY = (
@@ -236,23 +250,185 @@ class PichauDriver:
             detail = f"R$ {product.pix_price:.2f} abaixo do piso R$ {min_price:.2f}, parece anúncio suspeito"
             return BuyResult(status=BuyStatus.PRICE_BELOW_FLOOR, product=product, detail=detail)
 
-        botao = await find_clickable(page, _BUY_PATTERNS)
-        if botao is None:
-            shot = await self._screenshot(page, "sem-botao")
-            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="Botão de comprar não encontrado")
-        await botao.click(timeout=15000)
-        await asyncio.sleep(4.0)
-        stopwatch.lap("carrinho")
-        self._log("Produto colocado no carrinho")
+        sku = (product.seller or "").strip()
+        if not sku or sku == STORE_LABEL:
+            shot = await self._screenshot(page, "sem-sku")
+            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="SKU do produto não encontrado")
 
-        shot = await self._screenshot(page, "carrinho")
-        detail = (
-            "Produto no carrinho. O checkout de pagamento da Pichau ainda não foi mapeado, "
-            "então o robô para aqui e não gera o PIX"
+        await self._clear_cart(page)
+        await page.goto(_CART_ADD.format(sku=sku), wait_until="domcontentloaded", timeout=45000)
+        await asyncio.sleep(5.0)
+        stopwatch.lap("carrinho")
+        self._log(f"Produto {sku} colocado no carrinho")
+
+        await page.goto(_CHECKOUT_URL, wait_until="domcontentloaded", timeout=45000)
+        await asyncio.sleep(8.0)
+        if self._session_lost(page):
+            return self._login_required(product)
+        if not await self._handle_captcha(page):
+            shot = await self._screenshot(page, "captcha")
+            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="Verificação de segurança bloqueou o checkout")
+
+        await self._ensure_shipping(page)
+        await self._apply_coupon(page)
+        if not await self._select_pix(page):
+            shot = await self._screenshot(page, "sem-pix")
+            detail = "Não consegui selecionar PIX na forma de pagamento"
+            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
+        await self._accept_terms(page)
+        stopwatch.lap("pagamento")
+
+        if not confirm:
+            shot = await self._screenshot(page, "dry-run")
+            detail = "Parado no checkout com PIX selecionado (use compra real para gerar o código)"
+            if self._coupon_note:
+                detail += f"; {self._coupon_note}"
+            return BuyResult(status=BuyStatus.DRY_RUN_OK, product=product, screenshot=shot, detail=detail)
+
+        botao = await find_clickable(page, _FINALIZE)
+        if botao is None:
+            shot = await self._screenshot(page, "sem-finalizar")
+            return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="Botão Finalizar Pedido não encontrado")
+        await botao.click(timeout=15000)
+        self._log("Pedido enviado, aguardando código PIX")
+        await asyncio.sleep(4.0)
+        if self._session_lost(page):
+            return self._login_required(product)
+        code = await pix.wait_for(page)
+        if code:
+            return await self._pix_result(page, product, code, stopwatch)
+        shot = await self._screenshot(page, "sem-codigo")
+        detail = "Pedido finalizado mas o código PIX não foi localizado, confira o screenshot"
+        return BuyResult(status=BuyStatus.FAILED, product=product, screenshot=shot, detail=detail)
+
+    def _session_lost(self, page: Page) -> bool:
+        return any(marca in page.url for marca in _LOST_SESSION)
+
+    def _login_required(self, product: ProductInfo) -> BuyResult:
+        detail = "A Pichau pediu login: a sessão caiu. Reconecte a conta e tente de novo"
+        self._log(detail)
+        return BuyResult(status=BuyStatus.LOGIN_REQUIRED, product=product, detail=detail)
+
+    async def _clear_cart(self, page: Page) -> None:
+        try:
+            await page.goto(_CART_PAGE, wait_until="domcontentloaded", timeout=45000)
+            await asyncio.sleep(4.0)
+        except Exception:
+            return
+        botao = await find_clickable(page, _CLEAR_CART)
+        if botao is None:
+            return
+        try:
+            await botao.click(timeout=8000)
+            await asyncio.sleep(3.0)
+            self._log("Carrinho da Pichau esvaziado antes da compra")
+        except Exception:
+            pass
+
+    async def _ensure_shipping(self, page: Page) -> None:
+        try:
+            marcado = await page.locator(f"{_SHIPPING_RADIO}:checked").count()
+            if marcado:
+                return
+            opcao = page.locator(_SHIPPING_RADIO).first
+            if await opcao.count() > 0:
+                await opcao.check(timeout=8000)
+                await asyncio.sleep(2.5)
+                self._log("Frete selecionado")
+        except Exception:
+            pass
+
+    async def _select_pix(self, page: Page) -> bool:
+        radio = page.locator(_PIX_RADIO).first
+        try:
+            if await radio.count() == 0:
+                self._log("Opção PIX não encontrada na tela de pagamento")
+                return False
+            if await radio.is_checked():
+                return True
+            await radio.scroll_into_view_if_needed(timeout=8000)
+        except Exception:
+            return False
+
+        for tentativa in (self._check_forcado, self._clicar_rotulo_pix, self._clicar_texto_pix):
+            try:
+                await tentativa(page, radio)
+            except Exception:
+                continue
+            await asyncio.sleep(3.0)
+            try:
+                if await radio.is_checked():
+                    self._log("Forma de pagamento PIX selecionada")
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _check_forcado(self, _page: Page, radio) -> None:
+        await radio.check(timeout=8000, force=True)
+
+    async def _clicar_rotulo_pix(self, page: Page, radio) -> None:
+        await radio.evaluate("e => (e.closest('label') || e.parentElement).click()")
+
+    async def _clicar_texto_pix(self, page: Page, _radio) -> None:
+        alvo = page.get_by_text(re.compile(r"pague\s+via\s+pix", re.IGNORECASE)).first
+        if await alvo.count() > 0:
+            await alvo.click(timeout=8000)
+
+    async def _accept_terms(self, page: Page) -> None:
+        try:
+            caixa = page.get_by_role("checkbox").last
+            if await caixa.count() > 0 and not await caixa.is_checked():
+                await caixa.check(timeout=8000)
+                await asyncio.sleep(1.5)
+                self._log("Termos de venda aceitos")
+        except Exception:
+            self._log("Não consegui marcar os termos de venda")
+
+    async def _apply_coupon(self, page: Page) -> None:
+        if not self._coupon or self._coupon_note:
+            return
+        try:
+            campo = page.locator(_COUPON_FIELD).first
+            if await campo.count() == 0 or not await campo.is_visible():
+                return
+            await campo.fill(self._coupon)
+            botao = await find_clickable(page, _COUPON_APPLY)
+            if botao is None:
+                return
+            await botao.click(timeout=8000)
+            await asyncio.sleep(3.5)
+            texto = normalize(await page_text(page))
+            if any(hint in texto for hint in _COUPON_REJECTED):
+                self._coupon_note = f"Cupom {self._coupon} recusado pela loja"
+            else:
+                self._coupon_note = f"Cupom {self._coupon} aplicado"
+            self._log(self._coupon_note)
+        except Exception:
+            self._coupon_note = f"Cupom {self._coupon}: falha ao aplicar"
+            self._log(self._coupon_note)
+
+    async def _pix_result(self, page: Page, product: ProductInfo, code: str, stopwatch: _Stopwatch) -> BuyResult:
+        from .records import save_record
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        shot = await self._screenshot(page, "pix-print", full_page=True)
+        result = BuyResult(
+            status=BuyStatus.PIX_READY,
+            product=product,
+            pix_code=code,
+            screenshot=shot,
+            detail=self._coupon_note,
+            elapsed=round(stopwatch.total(), 1),
+            timings=dict(stopwatch.laps),
         )
-        if confirm:
-            detail += ". Finalize manualmente se quiser concluir esta compra"
-        return BuyResult(status=BuyStatus.DRY_RUN_OK, product=product, screenshot=shot, detail=detail)
+        save_record(result, stamp, STORE_ID)
+        caminho = paths.autobuy_dir() / f"{stamp}-pix-{_slug(product.title)}.txt"
+        caminho.write_text(
+            f"{product.title}\nR$ {product.pix_price:.2f}\n{product.url}\n\n{code}\n", encoding="utf-8"
+        )
+        self._log("Código PIX capturado")
+        return result
 
     async def _handle_captcha(self, page: Page) -> bool:
         texto = normalize(await page_text(page))

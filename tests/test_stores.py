@@ -265,3 +265,14 @@ def test_pichau_needs_real_chrome():
     assert registry.get("pichau").needs_real_chrome is True
     for outra in ("kabum", "amazon", "terabyte"):
         assert registry.get(outra).needs_real_chrome is False
+
+
+def test_pichau_pix_selector_avoids_card_plus_pix():
+    from monitor.autobuy import pichau
+
+    assert pichau._PIX_RADIO == "input[type=radio][value='mercadopago_custom_pix']"
+    assert "creditc" not in pichau._PIX_RADIO
+
+
+def test_pichau_checkout_available():
+    assert registry.get("pichau").can_checkout is True
