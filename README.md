@@ -2,6 +2,7 @@
 
 Monitor e replicador de mensagens do Telegram com interface desktop moderna. Captura mensagens de vários canais ou grupos, aplica filtros inteligentes e replica em tempo real para os destinos que você escolher.
 
+[![Build](https://github.com/vinibotelho1998/Dbx-Telegram-Monitor/actions/workflows/build.yml/badge.svg)](https://github.com/vinibotelho1998/Dbx-Telegram-Monitor/actions/workflows/build.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6%20%2B%20Fluent-41CD52)
 ![Telethon](https://img.shields.io/badge/Telegram-Telethon-2CA5E0?logo=telegram&logoColor=white)
@@ -104,6 +105,15 @@ Requer o Playwright:
 pip install -r requirements-autobuy.txt
 playwright install chromium
 ```
+
+## Testes
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest tests/ -q
+```
+
+158 testes cobrem o núcleo sem depender de rede: modelos, configuração, detector de cupons, correspondência de palavras, roteamento de filtros, o motor com eventos simulados e o roteamento de lojas da auto-compra.
 
 ## Gerar executável
 
