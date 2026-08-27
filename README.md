@@ -154,8 +154,12 @@ Dbx-Telegram-Monitor/
 - As sessões do Telegram são salvas localmente e estão no `.gitignore`.
 - Nada é enviado para servidores de terceiros. A comunicação acontece direto com a API do Telegram.
 
+## Documentação técnica
+
+Arquitetura, convenções e decisões de design estão em [ARQUITETURA.md](ARQUITETURA.md).
+
 ## Licença
 
-Distribuído sob a licença MIT.
+Distribuído sob a [licença MIT](LICENSE).
 
 Desenvolvido por DBX.
