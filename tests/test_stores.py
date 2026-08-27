@@ -239,40 +239,6 @@ def test_terabyte_title_drops_store_suffix():
     assert _clean_title("") == ""
 
 
-def test_pichau_price_accepts_both_locales():
-    from monitor.autobuy.pichau import _price_br
-
-    assert _price_br("R$\xa01,799.99") == 1799.99
-    assert _price_br("R$\xa01.799,99") == 1799.99
-    assert _price_br("R$ 12,345.67") == 12345.67
-    assert _price_br("R$ 12.345,67") == 12345.67
-    assert _price_br("R$ 319,99") == 319.99
-    assert _price_br("R$ 1.802") == 1802.0
-    assert _price_br("") == 0.0
-
-
-def test_pichau_url_recognition():
-    from monitor.autobuy import urls
-
-    produto = "https://www.pichau.com.br/ssd-kingston-nv3-1tb-m-2-2230-pcie-nvme-snv3sm3-1t0"
-    assert urls.pichau_owns(produto)
-    assert not urls.pichau_owns("https://www.pichau.com.br/hardware/ssd")
-    assert not urls.pichau_owns("https://www.pichau.com.br/promocoes")
-    assert registry.match_url(produto).id == "pichau"
-
-
-def test_pichau_needs_real_chrome():
-    assert registry.get("pichau").needs_real_chrome is True
+def test_no_store_needs_real_chrome():
     for outra in ("kabum", "amazon", "terabyte"):
         assert registry.get(outra).needs_real_chrome is False
-
-
-def test_pichau_pix_selector_avoids_card_plus_pix():
-    from monitor.autobuy import pichau
-
-    assert pichau._PIX_RADIO == "input[type=radio][value='mercadopago_custom_pix']"
-    assert "creditc" not in pichau._PIX_RADIO
-
-
-def test_pichau_checkout_available():
-    assert registry.get("pichau").can_checkout is True

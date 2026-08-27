@@ -64,7 +64,7 @@ def _seconds(value: float) -> str:
 
 class AutobuyPage(PageView):
     def __init__(self, app, parent: QWidget | None = None) -> None:
-        super().__init__("autobuyPage", "Auto-Compra", "Compra automática até gerar o PIX", parent=parent)
+        super().__init__("autobuyPage", "Auto-Compra (BETA)", "Compra automática até gerar o PIX", parent=parent)
         self._app = app
         self._manager: AutobuyManager = app.autobuy if app is not None else AutobuyManager()
         self._expanded: set[str] = set()

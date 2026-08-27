@@ -16,7 +16,7 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 - Filtros inteligentes que detectam cupons, frete grátis, cashback, descontos e lojas sem precisar cadastrar cada código.
 - Filtros por palavra com lógica de inclusão e exclusão, suporte a junção obrigatória com `+` e alternativas com `ou`.
 - Dashboard com métricas ao vivo, gráfico de atividade por hora e histórico das últimas capturas.
-- Compra automática na KaBuM: configure produtos, palavras e preço máximo, e o robô compra sozinho até gerar o PIX, aplicando cupom da mensagem e avisando no seu Telegram.
+- Compra automática (BETA) na KaBuM, Amazon e Terabyte: configure produtos, palavras e preço máximo, e o robô compra sozinho até gerar o PIX, aplicando cupom da mensagem e avisando no seu Telegram.
 - Bandeja do sistema, inicialização junto com o Windows e início automático do monitor.
 - Credenciais e sessões guardadas localmente, fora do controle de versão.
 
@@ -71,9 +71,11 @@ No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
 3. Abra a aba **Canais**, clique em **Sincronizar** e marque cada canal como Origem ou Destino.
 4. Em **Filtros**, crie um novo filtro com palavras ou detecção inteligente.
 
-## Compra automática (KaBuM e Amazon)
+## Compra automática (BETA)
 
-Na aba **Auto-Compra** você configura tudo sem decorar sintaxe nenhuma. Cada produto vigiado tem três listas de palavras — as que **precisam aparecer**, as **alternativas** (basta uma) e as **proibidas** — montadas clicando, além de preço máximo, preço mínimo de segurança, quantidade e loja. Um campo de teste mostra na hora, em verde ou vermelho, se uma mensagem colada seria aceita e qual palavra bateu ou faltou.
+> Funcionalidade em beta: teste bem antes de confiar em dinheiro real, e prefira o modo simulação até se acostumar com o fluxo.
+
+Suporta KaBuM, Amazon e Terabyte. Na aba **Auto-Compra** você configura tudo sem decorar sintaxe nenhuma. Cada produto vigiado tem três listas de palavras — as que **precisam aparecer**, as **alternativas** (basta uma) e as **proibidas** — montadas clicando, além de preço máximo, preço mínimo de segurança, quantidade e loja. Um campo de teste mostra na hora, em verde ou vermelho, se uma mensagem colada seria aceita e qual palavra bateu ou faltou.
 
 Quando uma promoção capturada casa com um produto vigiado, o robô identifica a loja pelo link, valida o preço na página do produto, percorre o checkout, **seleciona PIX** e para na geração do código, que chega no app e nas suas Mensagens Salvas do Telegram com print e métricas por etapa. O pagamento é sempre seu: pague o PIX ou deixe expirar que o pedido cancela sozinho.
 
@@ -133,7 +135,7 @@ Dbx-Telegram-Monitor/
 
 ## Privacidade e segurança
 
-- As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\TelegramMonitorPro`, nunca no repositório.
+- As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\DbxTelegramMonitor`, nunca no repositório.
 - As sessões do Telegram são salvas localmente e estão no `.gitignore`.
 - Nada é enviado para servidores de terceiros. A comunicação acontece direto com a API do Telegram.
 
