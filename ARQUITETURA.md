@@ -1,6 +1,6 @@
-# AGENTS.md
+# Arquitetura
 
-Guia técnico do **DBX Telegram Monitor** para quem desenvolve.
+Guia técnico do **DBX Telegram Monitor** para quem for desenvolver no projeto.
 
 ## Visão geral
 
