@@ -93,6 +93,7 @@ Para conectar uma conta, use **Conectar conta** na aba, ou:
 ```bash
 python scripts/autobuy_login.py kabum
 python scripts/autobuy_login.py amazon
+python scripts/autobuy_login.py terabyte
 ```
 
 Requer o Playwright:
@@ -123,13 +124,15 @@ Dbx-Telegram-Monitor/
 │   ├── matching.py        Normalização e correspondência de palavras
 │   ├── detector.py        Detector de cupons e ofertas
 │   ├── filtering.py       Decisão de roteamento das mensagens
-│   └── engine.py          Motor assíncrono de monitoramento
+│   ├── engine.py          Motor assíncrono de monitoramento
+│   └── autobuy/           Compra automática: registry de lojas, drivers e checkout
 ├── ui/                    Interface PyQt6
 │   ├── window.py          Janela principal e orquestração
-│   ├── pages/             Dashboard, Filtros, Canais, Console, Configurações
+│   ├── pages/             Dashboard, Filtros, Canais, Auto-Compra, Console, Configurações
 │   ├── dialogs.py         Diálogos de login e edição de filtro
 │   ├── widgets.py         Componentes visuais
 │   └── theme.py           Cores e tema
+├── scripts/               Utilitários de linha de comando (login, ícone, screenshots)
 └── tests/                 Testes automatizados
 ```
 
