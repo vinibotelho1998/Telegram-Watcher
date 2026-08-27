@@ -33,6 +33,7 @@ logs/
 # Build
 build/
 dist/
+installer/*.exe
 
 # Screenshots gerados em desenvolvimento
 .screens/
