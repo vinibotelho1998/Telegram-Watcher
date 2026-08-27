@@ -15,6 +15,7 @@ UninstallDisplayName={#AppName}
 OutputDir=installer
 OutputBaseFilename=DBX-Telegram-Monitor-Setup
 SetupIconFile=assets\final_icon.ico
+LicenseFile=TERMOS_DE_USO.txt
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

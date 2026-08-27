@@ -74,6 +74,8 @@ No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
 ## Compra automática (BETA)
 
 > Funcionalidade em beta: teste bem antes de confiar em dinheiro real, e prefira o modo simulação até se acostumar com o fluxo.
+>
+> **Aviso legal:** a maioria das lojas proíbe automação em seus Termos de Serviço. Usar essa funcionalidade pode levar a suspensão de conta ou cancelamento de pedidos por parte da loja. O uso é por sua conta e risco — veja [TERMOS_DE_USO.txt](TERMOS_DE_USO.txt).
 
 Suporta KaBuM, Amazon e Terabyte. Na aba **Auto-Compra** você configura tudo sem decorar sintaxe nenhuma. Cada produto vigiado tem três listas de palavras — as que **precisam aparecer**, as **alternativas** (basta uma) e as **proibidas** — montadas clicando, além de preço máximo, preço mínimo de segurança, quantidade e loja. Um campo de teste mostra na hora, em verde ou vermelho, se uma mensagem colada seria aceita e qual palavra bateu ou faltou.
 

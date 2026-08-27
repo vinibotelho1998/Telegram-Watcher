@@ -1,0 +1,49 @@
+TERMOS DE USO - DBX TELEGRAM MONITOR
+
+Ao instalar e usar este software, voce concorda com os termos abaixo.
+
+1. NATUREZA DO SOFTWARE
+
+O DBX Telegram Monitor e uma ferramenta de codigo aberto para monitorar
+canais do Telegram e, opcionalmente, automatizar parte do fluxo de compra
+em lojas online ate a geracao do codigo PIX. O software e distribuido
+"como esta", sem garantias de qualquer tipo, expressas ou implicitas.
+
+2. AUTO-COMPRA: USO POR SUA CONTA E RISCO
+
+A funcionalidade de auto-compra (BETA) automatiza, dentro da sua propria
+conta e sessao de navegador, passos que voce faria manualmente no
+checkout de uma loja. Ela nunca preenche dados de pagamento, nunca
+resolve captcha e nunca finaliza um pagamento sozinha: o fluxo sempre
+para na geracao do codigo PIX, que voce paga (ou nao) manualmente.
+
+Ainda assim, a maioria das lojas online proibe automacao de qualquer
+tipo em seus Termos de Servico. Usar essa funcionalidade pode violar
+os termos da loja e resultar em suspensao de conta, cancelamento de
+pedidos ou outras medidas por parte do vendedor. E responsabilidade
+exclusiva de quem usa o software verificar e respeitar os Termos de
+Servico de cada loja antes de ativar a auto-compra.
+
+3. ISENCAO DE RESPONSABILIDADE
+
+O autor e os contribuidores deste projeto nao se responsabilizam por
+qualquer prejuizo direto ou indireto decorrente do uso deste software,
+incluindo, sem limitacao: banimento ou suspensao de contas em lojas ou
+no Telegram, pedidos cancelados, cobrancas indevidas, perda de dados
+ou qualquer outro dano. O uso e inteiramente por conta e risco de quem
+instala e opera o software.
+
+4. CREDENCIAIS E DADOS
+
+Credenciais de API do Telegram, sessoes e dados de configuracao ficam
+armazenados localmente na maquina do usuario e nunca sao enviados a
+terceiros pelo software. A comunicacao acontece diretamente com a API
+oficial do Telegram e, na auto-compra, diretamente com os sites das
+lojas configuradas.
+
+5. LICENCA
+
+O codigo-fonte deste projeto e distribuido sob a licenca MIT.
+
+Ao clicar em "Aceito o contrato", voce declara ter lido e concordado
+com os termos acima.
