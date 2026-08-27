@@ -34,6 +34,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Ler versao do app
+        id: version
+        shell: pwsh
+        run: |
+          $version = (python -c "from monitor import VERSION; print(VERSION)")
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Gerar executavel
         run: pyinstaller DBXTelegramMonitor.spec --noconfirm
 
@@ -42,7 +49,7 @@ jobs:
 
       - name: Gerar instalador
         shell: pwsh
-        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss'
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.version.outputs.version }} installer.iss'
 
       - name: Publicar artifact do instalador
         uses: actions/upload-artifact@v4
@@ -56,10 +63,11 @@ jobs:
         with:
           tag_name: latest
           target_commitish: ${{ github.sha }}
-          name: Ultima build (main)
+          name: DBX Telegram Monitor v${{ steps.version.outputs.version }}
           make_latest: true
           overwrite_files: true
           files: installer/*.exe
           body: |
-            Build automatica do ultimo commit na branch main.
+            Build automatica do commit ${{ github.sha }} na branch main.
+            Versao: ${{ steps.version.outputs.version }}
             Baixe o instalador (Setup) em Assets e execute para instalar.

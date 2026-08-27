@@ -1,5 +1,7 @@
 #define AppName "DBX Telegram Monitor"
+#ifndef AppVersion
 #define AppVersion "5.0.0"
+#endif
 #define AppPublisher "DBX"
 #define AppExeName "DBX Telegram Monitor.exe"
 
