@@ -128,7 +128,7 @@ class MonitorEngine:
             session,
             self.config.api_id,
             self.config.api_hash,
-            device_model="DBX Telegram Monitor",
+            device_model="Dbx Telegram Monitor",
             app_version=VERSION,
         )
         await self._user.connect()

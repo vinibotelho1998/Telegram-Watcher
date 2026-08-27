@@ -4,7 +4,7 @@ Ao instalar e usar este software, voce concorda com os termos abaixo.
 
 1. NATUREZA DO SOFTWARE
 
-O DBX Telegram Monitor e uma ferramenta de codigo aberto para monitorar
+O Dbx Telegram Monitor e uma ferramenta de codigo aberto para monitorar
 canais do Telegram e, opcionalmente, automatizar parte do fluxo de compra
 em lojas online ate a geracao do codigo PIX. O software e distribuido
 "como esta", sem garantias de qualquer tipo, expressas ou implicitas.

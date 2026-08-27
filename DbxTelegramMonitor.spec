@@ -28,7 +28,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="DBX Telegram Monitor",
+    name="Dbx Telegram Monitor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

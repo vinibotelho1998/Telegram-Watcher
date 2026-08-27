@@ -1,4 +1,4 @@
-# DBX Telegram Monitor
+# Dbx Telegram Monitor
 
 Monitor e replicador de mensagens do Telegram com interface desktop moderna. Captura mensagens de vários canais ou grupos, aplica filtros inteligentes e replica em tempo real para os destinos que você escolher.
 
@@ -119,7 +119,7 @@ python -m pytest tests/ -q
 
 ```bash
 pip install pyinstaller
-pyinstaller DBXTelegramMonitor.spec
+pyinstaller DbxTelegramMonitor.spec
 ```
 
 O executável é gerado em `dist`.
@@ -162,4 +162,4 @@ Arquitetura, convenções e decisões de design estão em [ARQUITETURA.md](ARQUI
 
 Distribuído sob a [licença MIT](LICENSE).
 
-Desenvolvido por DBX.
+Desenvolvido por Dbx.

@@ -1,6 +1,6 @@
 # Arquitetura
 
-Guia técnico do **DBX Telegram Monitor** para quem for desenvolver no projeto.
+Guia técnico do **Dbx Telegram Monitor** para quem for desenvolver no projeto.
 
 ## Visão geral
 

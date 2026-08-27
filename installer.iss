@@ -1,21 +1,21 @@
-#define AppName "DBX Telegram Monitor"
+#define AppName "Dbx Telegram Monitor"
 #ifndef AppVersion
 #define AppVersion "5.0.0"
 #endif
-#define AppPublisher "DBX"
-#define AppExeName "DBX Telegram Monitor.exe"
+#define AppPublisher "Dbx"
+#define AppExeName "Dbx Telegram Monitor.exe"
 
 [Setup]
 AppId={{52FF51D3-33EC-41B2-9C8D-C65F8B5850F6}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\DBX Telegram Monitor
+DefaultDirName={autopf}\Dbx Telegram Monitor
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
 OutputDir=installer
-OutputBaseFilename=DBX-Telegram-Monitor-Setup
+OutputBaseFilename=Dbx-Telegram-Monitor-Setup
 SetupIconFile=assets\final_icon.ico
 LicenseFile=TERMOS_DE_USO.txt
 Compression=lzma2

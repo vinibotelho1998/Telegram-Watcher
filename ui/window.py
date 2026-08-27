@@ -172,11 +172,11 @@ class AppWindow(FluentWindow):
     def _on_captcha(self) -> None:
         aviso = "Captcha na tela! Resolva na janela do navegador — o robô espera 3 minutos e continua sozinho."
         self.alert(aviso)
-        self.schedule(self.engine.notify_me(f"[DBX] {aviso}"))
+        self.schedule(self.engine.notify_me(f"[Dbx] {aviso}"))
 
     def _on_autobuy_alert(self, message: str) -> None:
         self.alert(message)
-        self.schedule(self.engine.notify_me(f"[DBX] {message}"))
+        self.schedule(self.engine.notify_me(f"[Dbx] {message}"))
 
     def alert(self, message: str) -> None:
         self._toast(message, "warning")

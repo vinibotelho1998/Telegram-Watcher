@@ -42,7 +42,7 @@ jobs:
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Gerar executavel
-        run: pyinstaller DBXTelegramMonitor.spec --noconfirm
+        run: pyinstaller DbxTelegramMonitor.spec --noconfirm
 
       - name: Instalar Inno Setup
         run: choco install innosetup --no-progress -y
@@ -54,7 +54,7 @@ jobs:
       - name: Publicar artifact do instalador
         uses: actions/upload-artifact@v4
         with:
-          name: DBX-Telegram-Monitor-Setup
+          name: Dbx-Telegram-Monitor-Setup
           path: installer/*.exe
           if-no-files-found: error
 
@@ -63,7 +63,7 @@ jobs:
         with:
           tag_name: latest
           target_commitish: ${{ github.sha }}
-          name: DBX Telegram Monitor v${{ steps.version.outputs.version }}
+          name: Dbx Telegram Monitor v${{ steps.version.outputs.version }}
           make_latest: true
           overwrite_files: true
           files: installer/*.exe
