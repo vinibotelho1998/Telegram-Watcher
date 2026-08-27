@@ -15,7 +15,7 @@ from qfluentwidgets import (
     NavigationItemPosition,
 )
 
-from monitor import APP_ID, APP_NAME, paths
+from monitor import APP_ID, APP_NAME, VERSION, paths
 from monitor.autobuy.manager import AutobuyManager
 from monitor.autobuy.models import BuyResult, BuyStatus, WatchItem
 from monitor.autobuy.notify import build_message, send_pix_notification
@@ -82,7 +82,7 @@ class AppWindow(FluentWindow):
         return QIcon(str(icon_path)) if icon_path.exists() else QIcon()
 
     def _init_window(self) -> None:
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(f"{APP_NAME} v{VERSION}")
         self.setWindowIcon(self._icon)
         self.resize(1180, 800)
         self.navigationInterface.setExpandWidth(240)
@@ -116,8 +116,6 @@ class AppWindow(FluentWindow):
         tray.show()
         return tray
 
-    # ---- engine callbacks (rodam no loop do qasync = thread da GUI) ----
-
     def _on_state(self, state: EngineState, detail: str = "") -> None:
         self.dashboard.set_state(state)
         if self._tray is not None:
@@ -133,8 +131,6 @@ class AppWindow(FluentWindow):
 
     def _on_metrics(self) -> None:
         self.dashboard.refresh()
-
-    # ---- engine control ----
 
     def toggle_engine(self) -> None:
         if self.engine.is_running:
@@ -172,8 +168,6 @@ class AppWindow(FluentWindow):
         dialog.rejected.connect(lambda: resolve(None))
         dialog.show()
         return future
-
-    # ---- auto-compra ----
 
     def _on_captcha(self) -> None:
         aviso = "Captcha na tela! Resolva na janela do navegador — o robô espera 3 minutos e continua sozinho."
@@ -223,8 +217,6 @@ class AppWindow(FluentWindow):
         self.autobuy_page.refresh()
         self._toast("Produto removido", "info")
 
-    # ---- filtros ----
-
     def open_filter_editor(self, flt: Filter | None) -> None:
         dialog = FilterDialog(self.config, flt, self)
         if not dialog.exec():
@@ -249,8 +241,6 @@ class AppWindow(FluentWindow):
             if flt.id == filter_id:
                 flt.enabled = enabled
         self.filter_store.save(self.filters)
-
-    # ---- canais ----
 
     def set_channel_role(self, chat_id: int, name: str, role: str, enabled: bool) -> None:
         target = self.config.source_ids if role == "source" else self.config.destination_ids
@@ -282,8 +272,6 @@ class AppWindow(FluentWindow):
         finally:
             self.channels_page.set_syncing(False)
 
-    # ---- configurações ----
-
     def save_settings(self, payload: dict, silent: bool = False) -> None:
         raw_id = str(payload.get("api_id", "")).strip()
         try:
@@ -302,8 +290,6 @@ class AppWindow(FluentWindow):
 
     def toggle_theme(self, dark: bool) -> None:
         apply_theme(dark)
-
-    # ---- inicialização com o Windows ----
 
     def is_windows_autostart(self) -> bool:
         if os.name != "nt":
@@ -341,8 +327,6 @@ class AppWindow(FluentWindow):
         launcher = sys.executable.replace("python.exe", "pythonw.exe")
         return f'"{launcher}" "{script}"'
 
-    # ---- notificações ----
-
     def _toast(self, message: str, kind: str = "info") -> None:
         builders = {
             "success": InfoBar.success,
@@ -358,8 +342,6 @@ class AppWindow(FluentWindow):
             duration=2600,
             parent=self,
         )
-
-    # ---- janela / bandeja ----
 
     def bring_to_front(self) -> None:
         self._show_window()

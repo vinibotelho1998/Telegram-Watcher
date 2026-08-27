@@ -14,6 +14,8 @@ from qfluentwidgets import (
     SwitchButton,
 )
 
+from monitor import APP_NAME, AUTHOR, VERSION
+
 from ..common import PageView, make_vscroll
 from ..theme import PALETTE
 
@@ -50,6 +52,14 @@ class SettingsPage(PageView):
         self.sw_startup = self._switch(behavior_layout, "Iniciar com o Windows", "Abre o app ao ligar o computador")
         self.sw_theme = self._switch(behavior_layout, "Tema escuro", "")
         body.addWidget(behavior)
+
+        about, about_layout = self._card("Sobre")
+        about_layout.addWidget(BodyLabel(f"{APP_NAME} — versão {VERSION}"))
+        author_label = CaptionLabel(f"Desenvolvido por {AUTHOR}")
+        author_label.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
+        about_layout.addWidget(author_label)
+        body.addWidget(about)
+
         body.addStretch(1)
 
         self.load()
