@@ -59,6 +59,22 @@ def autobuy_dir() -> Path:
     return _sub("autobuy")
 
 
+def media_cache_dir() -> Path:
+    return _sub("media")
+
+
+def avatar_cache_dir() -> Path:
+    path = media_cache_dir() / "avatars"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def thumb_cache_dir() -> Path:
+    path = media_cache_dir() / "thumbs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def env_file() -> Path:
     return app_dir() / ".env"
 
