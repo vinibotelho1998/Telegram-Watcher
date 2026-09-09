@@ -25,7 +25,15 @@ from monitor.models import EngineState, Filter, LogLevel
 from monitor.storage import ChannelCache, FilterStore
 
 from .dialogs import CodeDialog, FilterDialog, PasswordDialog, WatchDialog
-from .pages import AutobuyPage, ChannelsPage, ConsolePage, DashboardPage, FiltersPage, SettingsPage
+from .pages import (
+    AutobuyPage,
+    ChannelsPage,
+    ConsolePage,
+    DashboardPage,
+    FiltersPage,
+    MessagesPage,
+    SettingsPage,
+)
 from .setup_wizard import SetupWizard
 from .theme import apply_theme
 from .tray import SystemTray
@@ -60,6 +68,7 @@ class AppWindow(FluentWindow):
             on_event=self._on_event,
             on_metrics=self._on_metrics,
             on_text=self.autobuy.handle_text,
+            on_incoming=self._on_incoming,
             code_provider=self._request_code,
             password_provider=self._request_password,
         )
@@ -94,6 +103,7 @@ class AppWindow(FluentWindow):
 
     def _init_pages(self) -> None:
         self.dashboard = DashboardPage(self)
+        self.messages_page = MessagesPage(self)
         self.filters_page = FiltersPage(self)
         self.channels_page = ChannelsPage(self)
         self.autobuy_page = AutobuyPage(self)
@@ -101,6 +111,7 @@ class AppWindow(FluentWindow):
         self.settings_page = SettingsPage(self)
 
         self.addSubInterface(self.dashboard, FluentIcon.HOME, "Dashboard")
+        self.addSubInterface(self.messages_page, FluentIcon.CHAT, "Conversas")
         self.addSubInterface(self.filters_page, FluentIcon.FILTER, "Filtros")
         self.addSubInterface(self.channels_page, FluentIcon.PEOPLE, "Canais")
         self.addSubInterface(self.autobuy_page, FluentIcon.SHOPPING_CART, "Auto-Compra")
@@ -118,6 +129,8 @@ class AppWindow(FluentWindow):
 
     def _on_state(self, state: EngineState, detail: str = "") -> None:
         self.dashboard.set_state(state)
+        if state == EngineState.ONLINE:
+            QTimer.singleShot(600, self.messages_page.reload_chats)
         if self._tray is not None:
             self._tray.set_state(state)
         if state == EngineState.ERROR and detail:
@@ -131,6 +144,13 @@ class AppWindow(FluentWindow):
 
     def _on_metrics(self) -> None:
         self.dashboard.refresh()
+
+    def _on_incoming(self, chat_id: int, message) -> None:
+        self.messages_page.on_incoming(chat_id, message)
+
+    def open_conversation(self, chat_id: int) -> None:
+        self.switchTo(self.messages_page)
+        self.messages_page.open_chat(chat_id)
 
     def toggle_engine(self) -> None:
         if self.engine.is_running:
@@ -228,12 +248,14 @@ class AppWindow(FluentWindow):
             self.filters.append(result)
         self.filter_store.save(self.filters)
         self.filters_page.refresh()
+        self.messages_page.refresh_marks()
         self._toast("Filtro salvo", "success")
 
     def delete_filter(self, filter_id: str) -> None:
         self.filters = [f for f in self.filters if f.id != filter_id]
         self.filter_store.save(self.filters)
         self.filters_page.refresh()
+        self.messages_page.refresh_marks()
         self._toast("Filtro removido", "info")
 
     def toggle_filter(self, filter_id: str, enabled: bool) -> None:
@@ -241,6 +263,7 @@ class AppWindow(FluentWindow):
             if flt.id == filter_id:
                 flt.enabled = enabled
         self.filter_store.save(self.filters)
+        self.messages_page.refresh_marks()
 
     def set_channel_role(self, chat_id: int, name: str, role: str, enabled: bool) -> None:
         target = self.config.source_ids if role == "source" else self.config.destination_ids
@@ -326,6 +349,9 @@ class AppWindow(FluentWindow):
         script = paths.resource_path("app.py")
         launcher = sys.executable.replace("python.exe", "pythonw.exe")
         return f'"{launcher}" "{script}"'
+
+    def toast(self, message: str, kind: str = "info") -> None:
+        self._toast(message, kind)
 
     def _toast(self, message: str, kind: str = "info") -> None:
         builders = {

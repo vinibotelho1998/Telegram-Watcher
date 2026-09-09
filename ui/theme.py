@@ -5,6 +5,7 @@ from qfluentwidgets import Theme, setTheme, setThemeColor
 from monitor.models import EngineState, LogLevel
 
 ACCENT = "#3B82F6"
+TEXT = ("#1B1B1B", "#F2F3F5")
 
 PALETTE = {
     "success": "#22C55E",
