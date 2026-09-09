@@ -7,21 +7,12 @@ from .matching import matches_exclude, matches_include
 from .models import Filter
 
 
-def resolve_destinations(
-    filters: list[Filter],
-    chat_id: int,
-    text: str,
-    default_destinations: Iterable[int],
-) -> list[int]:
-    defaults = list(dict.fromkeys(default_destinations))
-    if not any(f.enabled for f in filters):
-        return defaults
-
+def matching_filters(filters: list[Filter], chat_id: int, text: str) -> list[Filter]:
     active = [f for f in filters if f.enabled and f.applies_to(chat_id)]
     if any(matches_exclude(text, flt.exclude) for flt in active):
         return []
 
-    targets: list[int] = []
+    matched: list[Filter] = []
     detection: Detection | None = None
 
     for flt in active:
@@ -41,6 +32,23 @@ def resolve_destinations(
                     continue
             if has_include and not matches_include(text, flt.include):
                 continue
+        matched.append(flt)
+
+    return matched
+
+
+def resolve_destinations(
+    filters: list[Filter],
+    chat_id: int,
+    text: str,
+    default_destinations: Iterable[int],
+) -> list[int]:
+    defaults = list(dict.fromkeys(default_destinations))
+    if not any(f.enabled for f in filters):
+        return defaults
+
+    targets: list[int] = []
+    for flt in matching_filters(filters, chat_id, text):
         for dest in (flt.destination_ids or defaults):
             if dest not in targets:
                 targets.append(dest)
