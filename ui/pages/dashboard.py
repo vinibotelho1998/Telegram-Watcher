@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -23,8 +24,13 @@ _STATUS_KEY = {"captured": "capture", "forwarded": "success", "failed": "danger"
 
 
 class _FeedRow(QWidget):
-    def __init__(self, data: dict, parent: QWidget | None = None) -> None:
+    def __init__(self, data: dict, on_open=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._chat_id = data.get("chat_id")
+        self._on_open = on_open
+        if self._chat_id and on_open is not None:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Abrir esta conversa")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -44,6 +50,11 @@ class _FeedRow(QWidget):
         layout.addWidget(time_label)
         layout.addWidget(source)
         layout.addWidget(text, 1)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if self._chat_id and self._on_open is not None:
+            self._on_open(int(self._chat_id))
+        super().mousePressEvent(event)
 
 
 class DashboardPage(PageView):
@@ -126,7 +137,7 @@ class DashboardPage(PageView):
             self._empty.setParent(None)
             self._empty.deleteLater()
             self._empty = None
-        self._feed.insertWidget(0, _FeedRow(data))
+        self._feed.insertWidget(0, _FeedRow(data, self._app.open_conversation))
         self._events += 1
         self.feed_count.setText(f"{self._events} eventos")
         while self._feed.count() > _FEED_LIMIT:

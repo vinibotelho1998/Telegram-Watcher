@@ -12,6 +12,7 @@ from qfluentwidgets import (
     SearchLineEdit,
     StrongBodyLabel,
     SubtitleLabel,
+    TransparentToolButton,
 )
 
 from monitor.models import Channel
@@ -36,6 +37,11 @@ class _ChannelRow(CardWidget):
         meta.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         info.addWidget(meta)
         layout.addLayout(info, 1)
+
+        open_btn = TransparentToolButton(FluentIcon.CHAT)
+        open_btn.setToolTip("Ler as mensagens desta conversa")
+        open_btn.clicked.connect(lambda: app.open_conversation(channel.id))
+        layout.addWidget(open_btn)
 
         source = CheckBox("Origem")
         source.setChecked(channel.id in app.config.source_ids)
