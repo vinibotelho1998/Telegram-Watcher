@@ -19,6 +19,7 @@ from . import VERSION, paths
 from .config import AppConfig
 from .filtering import resolve_destinations
 from .models import Channel, ChannelKind, EngineState, Filter, LogLevel, Metrics
+from .reader import ChatReader, build_message
 
 log = logging.getLogger("monitor.engine")
 
@@ -27,6 +28,7 @@ LogCb = Callable[[str, LogLevel], None]
 EventCb = Callable[[dict], None]
 MetricsCb = Callable[[], None]
 TextCb = Callable[[str], None]
+IncomingCb = Callable[[int, object], None]
 CodeProvider = Callable[[str], Awaitable[Optional[str]]]
 PasswordProvider = Callable[[], Awaitable[Optional[str]]]
 
@@ -58,6 +60,7 @@ class MonitorEngine:
         on_event: EventCb | None = None,
         on_metrics: MetricsCb | None = None,
         on_text: TextCb | None = None,
+        on_incoming: IncomingCb | None = None,
         code_provider: CodeProvider | None = None,
         password_provider: PasswordProvider | None = None,
     ) -> None:
@@ -68,11 +71,13 @@ class MonitorEngine:
         self._on_event = on_event or _noop
         self._on_metrics = on_metrics or _noop
         self._on_text = on_text or _noop
+        self._on_incoming = on_incoming or _noop
         self._code_provider = code_provider
         self._password_provider = password_provider
 
         self.state = EngineState.OFFLINE
         self.metrics = Metrics()
+        self.reader = ChatReader(lambda: self._user)
 
         self._user: TelegramClient | None = None
         self._bot: TelegramClient | None = None
@@ -189,6 +194,7 @@ class MonitorEngine:
 
     async def _handle(self, event) -> None:
         chat_id = event.chat_id
+        self._publish_incoming(chat_id, event.message)
         if chat_id not in self.config.source_ids:
             return
         sender_id = event.sender_id
@@ -208,7 +214,9 @@ class MonitorEngine:
         text = message.message or getattr(message, "text", "") or ""
         self.metrics.mark_capture()
         source = self.config.channel_name(chat_id)
-        self._on_event({"time": _now(), "source": source, "text": _preview(text), "status": "captured"})
+        self._on_event(
+            {"time": _now(), "source": source, "text": _preview(text), "status": "captured", "chat_id": chat_id}
+        )
         self._log(f"Capturado de {source}", LogLevel.CAPTURE)
         self._on_metrics()
         try:
@@ -223,6 +231,15 @@ class MonitorEngine:
             return
         await self._forward(message, destinations)
 
+    def _publish_incoming(self, chat_id: int, message) -> None:
+        if message is None:
+            return
+        try:
+            self.reader.remember(chat_id, message)
+            self._on_incoming(chat_id, build_message(message, chat_id))
+        except Exception:
+            log.exception("Erro ao publicar mensagem para a leitura")
+
     async def _forward(self, message, destinations: list[int]) -> None:
         for dest in destinations:
             if not dest:
@@ -231,7 +248,7 @@ class MonitorEngine:
             try:
                 await self._send(message, dest)
                 self.metrics.forwarded += 1
-                self._on_event({"time": _now(), "source": name, "text": "Replicado", "status": "forwarded"})
+                self._on_event({"time": _now(), "source": name, "text": "Replicado", "status": "forwarded", "chat_id": dest})
                 self._log(f"Enviado para {name}", LogLevel.SUCCESS)
             except FloodWaitError as exc:
                 self._log(f"Limite do Telegram: aguardando {exc.seconds}s", LogLevel.WARNING)
@@ -244,7 +261,7 @@ class MonitorEngine:
                     self._log(f"Falha em {name}: {retry_exc}", LogLevel.ERROR)
             except Exception as exc:
                 self.metrics.failed += 1
-                self._on_event({"time": _now(), "source": name, "text": f"Erro: {exc}", "status": "failed"})
+                self._on_event({"time": _now(), "source": name, "text": f"Erro: {exc}", "status": "failed", "chat_id": dest})
                 self._log(f"Falha em {name}: {exc}", LogLevel.ERROR)
             self._on_metrics()
 
@@ -327,6 +344,7 @@ class MonitorEngine:
                     pass
         self._user = self._bot = self._handler = None
         self._me = self._bot_me = None
+        self.reader.forget()
         self.metrics.started_at = None
         self._set_state(EngineState.OFFLINE)
         self._log("Monitor parado", LogLevel.INFO)
