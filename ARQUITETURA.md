@@ -16,9 +16,10 @@ monitor/      Núcleo testável, independente de Qt
   config.py     AppConfig: leitura e escrita do .env
   models.py     Filter, Channel, Metrics, EngineState, LogLevel
   storage.py    FilterStore e ChannelCache em JSON
+  reader.py     ChatReader: diálogos, histórico, busca, avatares e miniaturas
   matching.py   normalização, variações e lógica de palavras (+ e ou)
   detector.py   CouponDetector e avaliação de smart rules
-  filtering.py  resolve_destinations, decisão de roteamento
+  filtering.py  matching_filters e resolve_destinations, decisão de roteamento
   engine.py     MonitorEngine: Telethon, dedup, rate limit, callbacks
   autobuy/      Compra automática multi-loja, separada do monitor
     models.py     WatchItem (produto vigiado), BuyResult, BuyStatus
@@ -37,7 +38,7 @@ monitor/      Núcleo testável, independente de Qt
     notify.py     notificação nas Mensagens Salvas do Telegram
 ui/           Interface PyQt6
   window.py     AppWindow, orquestra núcleo e telas
-  pages/        dashboard, filters, channels, autobuy, console, settings
+  pages/        dashboard, messages, filters, channels, autobuy, console, settings
   dialogs.py    CodeDialog, PasswordDialog, FilterDialog
   watch_dialog.py  editor de produto vigiado com palavras em chips e teste ao vivo
   chips.py      WordChips e FlowLayout para listas de palavras
@@ -56,6 +57,10 @@ Para adicionar uma loja: as funções de URL em `urls.py`, o driver com os dois 
 O `StoreSpec` declara as peculiaridades de cada loja. `requires_window=True` quando a loja bloqueia navegador headless: a Terabyte fica atrás do Cloudflare e responde 403 sem janela, então o manager ignora a preferência global e abre visível para ela. `can_checkout=False` marca loja cujo pagamento ainda não foi mapeado, para a interface avisar em vez de prometer compra.
 
 Os seletores vêm de mapeamento real no site, nunca de suposição, e há testes que travam as escolhas frágeis. Três armadilhas já custaram caro: na Amazon os `id` são gerados por sessão (`pp-8H7pkg-107`), então só `name` e `data-testid` servem; na Terabyte existe `#ppixcartao` (Pix + Cartão) ao lado de `#ppix` (PIX puro), e casar por `id*=pix` compraria metade no cartão; e a Terabyte devolve para `/Central.obj` quando a sessão expira, sem pedir login, o que o driver trata como `LOGIN_REQUIRED`.
+
+A leitura das conversas fica no `reader.py`, que só depende de um provedor de cliente Telethon e converte os objetos da biblioteca em `ChatSummary` e `ChatMessage`. Nada ali escreve no Telegram: a página Conversas lê o histórico, pagina para trás pelo `max_id`, busca dentro do canal e recebe as mensagens novas pelo callback `on_incoming` do motor, que dispara para toda mensagem, inclusive de canais que não são origem. Avatares e miniaturas ficam em cache no disco (`%APPDATA%\DbxTelegramMonitor\media`) e nunca são baixados duas vezes.
+
+O `matching_filters` existe para a interface poder dizer **qual** filtro casou com uma mensagem, e o `resolve_destinations` passou a ser uma casca em cima dele. Na thread de leitura cada mensagem mostra os filtros que a replicariam e o que o detector achou, o que transforma a tela em um laboratório de teste de filtros com mensagens reais.
 
 A interface conversa com o núcleo apenas pela `AppWindow`, que detém a configuração, os filtros, o cache de canais e o motor. O motor recebe callbacks (`on_state`, `on_log`, `on_event`, `on_metrics`) e provedores assíncronos de código e senha. Como tudo roda no mesmo loop do qasync, os callbacks atualizam a interface diretamente.
 

@@ -13,6 +13,7 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 ## Destaques
 
 - Interface Fluent Design escura, fluida e nativa do Windows 11, construída com PyQt6 e QFluentWidgets.
+- Leitor de conversas embutido: navegue pelos seus canais e leia o histórico em balões, como no Telegram, sem sair do app.
 - Replicação em tempo real preservando a mensagem original, com encaminhamento nativo e cópia automática como alternativa.
 - Filtros inteligentes que detectam cupons, frete grátis, cashback, descontos e lojas sem precisar cadastrar cada código.
 - Filtros por palavra com lógica de inclusão e exclusão, suporte a junção obrigatória com `+` e alternativas com `ou`.
@@ -22,6 +23,8 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 - Credenciais e sessões guardadas localmente, fora do controle de versão.
 
 ## Capturas de tela
+
+![Conversas](docs/screenshots/conversas.png)
 
 | Filtros | Canais |
 | :---: | :---: |
@@ -36,6 +39,14 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 Você marca canais de **origem** (monitorados) e de **destino** (para onde replicar). Cada mensagem nova nas origens passa pelos filtros ativos. Se algum filtro aprovar, a mensagem é replicada para os destinos daquele filtro ou para os destinos padrão.
 
 Os filtros inteligentes analisam o texto e reconhecem padrões reais de oferta. Em vez de cadastrar `MELI50`, `PRAVC` ou `VALE100`, você ativa a regra `Qualquer cupom` e o detector captura qualquer código válido, com proteção contra falsos positivos.
+
+## Conversas
+
+A aba **Conversas** é um leitor de Telegram dentro do app. À esquerda ficam seus canais, grupos e conversas, com foto, prévia da última mensagem e contador de não lidas. À direita, a conversa escolhida em balões, agrupada por dia, com miniatura das fotos, links clicáveis e rolagem infinita para trás.
+
+Duas coisas que o Telegram não faz: cada mensagem mostra **quais filtros seus a replicariam** e o que o detector encontrou nela (cupom, frete grátis, loja), então dá para testar um filtro contra mensagens reais antes de confiar nele. E dá para marcar o canal como Origem ou Destino sem sair da leitura.
+
+Nada é enviado por essa tela: ela só lê. Mensagens novas aparecem sozinhas enquanto o monitor está online, e clicar em um evento do Dashboard abre a conversa correspondente.
 
 ## Stack
 
@@ -71,6 +82,7 @@ No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
 2. Salve e clique em **Iniciar monitor** no Dashboard. Na primeira vez o Telegram envia um código de verificação, que você digita na janela que aparece.
 3. Abra a aba **Canais**, clique em **Sincronizar** e marque cada canal como Origem ou Destino.
 4. Em **Filtros**, crie um novo filtro com palavras ou detecção inteligente.
+5. Abra **Conversas** para ler os canais dentro do app e conferir quais mensagens seus filtros pegariam.
 
 ## Compra automática (BETA)
 
@@ -136,11 +148,12 @@ Dbx-Telegram-Monitor/
 │   ├── matching.py        Normalização e correspondência de palavras
 │   ├── detector.py        Detector de cupons e ofertas
 │   ├── filtering.py       Decisão de roteamento das mensagens
+│   ├── reader.py          Leitura de conversas, histórico, busca e mídia
 │   ├── engine.py          Motor assíncrono de monitoramento
 │   └── autobuy/           Compra automática: registry de lojas, drivers e checkout
 ├── ui/                    Interface PyQt6
 │   ├── window.py          Janela principal e orquestração
-│   ├── pages/             Dashboard, Filtros, Canais, Auto-Compra, Console, Configurações
+│   ├── pages/             Dashboard, Conversas, Filtros, Canais, Auto-Compra, Console, Configurações
 │   ├── dialogs.py         Diálogos de login e edição de filtro
 │   ├── widgets.py         Componentes visuais
 │   └── theme.py           Cores e tema
@@ -152,6 +165,7 @@ Dbx-Telegram-Monitor/
 
 - As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\DbxTelegramMonitor`, nunca no repositório.
 - As sessões do Telegram são salvas localmente e estão no `.gitignore`.
+- A aba Conversas é somente leitura: o app nunca envia, apaga ou marca mensagens como lidas por você. Fotos e avatares baixados ficam em cache em `%APPDATA%\DbxTelegramMonitor\media`.
 - Nada é enviado para servidores de terceiros. A comunicação acontece direto com a API do Telegram.
 
 ## Documentação técnica
