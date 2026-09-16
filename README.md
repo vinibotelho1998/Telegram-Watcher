@@ -6,7 +6,7 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6%20%2B%20Fluent-41CD52)
 ![Telethon](https://img.shields.io/badge/Telegram-Telethon-2CA5E0?logo=telegram&logoColor=white)
-![Licença](https://img.shields.io/badge/Licen%C3%A7a-MIT-green)
+![Licença](https://img.shields.io/badge/Licen%C3%A7a-GPLv3-green)
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
@@ -174,6 +174,11 @@ Arquitetura, convenções e decisões de design estão em [ARQUITETURA.md](ARQUI
 
 ## Licença
 
-Distribuído sob a [licença MIT](LICENSE).
+Distribuído sob a [GNU General Public License v3.0](LICENSE).
+
+A interface é construída com PyQt6 e PyQt6-Fluent-Widgets, ambos GPLv3, e a GPL é
+copyleft: qualquer trabalho combinado com eles sai sob a mesma licença. Por isso este
+projeto é GPLv3 e não MIT, ao contrário dos outros que uso com PySide6. O
+[NOTICE.md](NOTICE.md) detalha cada dependência.
 
 Desenvolvido por Vinicius Botelho.

@@ -43,7 +43,8 @@ lojas configuradas.
 
 5. LICENCA
 
-O codigo-fonte deste projeto e distribuido sob a licenca MIT.
+O codigo-fonte deste projeto e distribuido sob a GNU General Public
+License v3.0, porque depende do PyQt6 e do PyQt6-Fluent-Widgets, que sao GPLv3.
 
 Ao clicar em "Aceito o contrato", voce declara ter lido e concordado
 com os termos acima.
