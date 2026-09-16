@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from monitor.autobuy import registry
-from monitor.autobuy.pix import clean_pix
+from watcher.autobuy import registry
+from watcher.autobuy.pix import clean_pix
 
-amazon = pytest.importorskip("monitor.autobuy.amazon", reason="requer playwright instalado")
+amazon = pytest.importorskip("watcher.autobuy.amazon", reason="requer playwright instalado")
 
 
 def test_amazon_product_id_from_dp():
@@ -97,21 +97,21 @@ def test_amazon_pix_radio_matches_by_value_not_id():
 
 
 def test_amazon_detects_real_rejection_message():
-    from monitor.matching import normalize
+    from watcher.matching import normalize
 
     real = normalize("O cupom de desconto inserido é inválido.")
     assert any(hint in real for hint in amazon._COUPON_REJECTED)
 
 
 def test_amazon_does_not_flag_success_as_rejection():
-    from monitor.matching import normalize
+    from watcher.matching import normalize
 
     ok = normalize("Cupom aplicado com sucesso ao seu pedido")
     assert not any(hint in ok for hint in amazon._COUPON_REJECTED)
 
 
 def test_kabum_quantity_selectors_match_real_markup():
-    from monitor.autobuy import kabum
+    from watcher.autobuy import kabum
 
     assert "quantity-" in kabum._QUANTITY_INPUT
     assert "aumentar" in kabum._QUANTITY_PLUS.lower()
@@ -156,7 +156,7 @@ def test_registry_labels_cover_all_stores():
 
 
 def test_terabyte_url_recognition():
-    from monitor.autobuy import urls
+    from watcher.autobuy import urls
 
     assert urls.terabyte_id("https://www.terabyteshop.com.br/produto/25639/ssd-adata") == 25639
     assert urls.terabyte_id("https://www.kabum.com.br/produto/105104/x") is None
@@ -182,21 +182,21 @@ def test_all_stores_can_checkout():
 
 
 def test_terabyte_pix_selector_avoids_pix_plus_card():
-    from monitor.autobuy import terabyte
+    from watcher.autobuy import terabyte
 
     assert terabyte._PIX_RADIO == "#ppix"
     assert "ppixcartao" not in terabyte._PIX_RADIO
 
 
 def test_terabyte_detects_expired_session():
-    from monitor.autobuy import terabyte
+    from watcher.autobuy import terabyte
 
     assert any("/Central.obj" in m for m in terabyte._LOST_SESSION)
 
 
 def test_terabyte_detects_real_coupon_rejection():
-    from monitor.autobuy import terabyte
-    from monitor.matching import normalize
+    from watcher.autobuy import terabyte
+    from watcher.matching import normalize
 
     assert any(h in normalize("! Not valid!") for h in terabyte._COUPON_REJECTED)
     assert not any(h in normalize("Cupom aplicado com sucesso") for h in terabyte._COUPON_REJECTED)
@@ -229,7 +229,7 @@ def test_clean_pix_strips_whitespace():
 
 
 def test_terabyte_title_drops_store_suffix():
-    from monitor.autobuy.terabyte import _clean_title
+    from watcher.autobuy.terabyte import _clean_title
 
     assert _clean_title("Placa-Mãe Biostar A520MT Chipset A520 AM4 mATX | Terabyte") == (
         "Placa-Mãe Biostar A520MT Chipset A520 AM4 mATX"

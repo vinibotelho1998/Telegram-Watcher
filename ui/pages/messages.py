@@ -28,10 +28,10 @@ from qfluentwidgets import (
     TransparentPushButton,
 )
 
-from monitor.detector import detect
-from monitor.filtering import matching_filters
-from monitor.models import ChannelKind
-from monitor.reader import ChatMessage, ChatSummary, preview_text
+from watcher.detector import detect
+from watcher.filtering import matching_filters
+from watcher.models import ChannelKind
+from watcher.reader import ChatMessage, ChatSummary, preview_text
 
 from ..common import PageView, clear_layout, make_vscroll
 from ..theme import ACCENT, PALETTE, TEXT

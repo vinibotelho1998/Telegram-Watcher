@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from monitor.autobuy.models import BuyResult, BuyStatus, ProductInfo, WatchItem
-from monitor.autobuy.notify import build_message
-from monitor.autobuy.resolver import extract_urls, find_kabum_product, product_id
+from watcher.autobuy.models import BuyResult, BuyStatus, ProductInfo, WatchItem
+from watcher.autobuy.notify import build_message
+from watcher.autobuy.resolver import extract_urls, find_kabum_product, product_id
 
 
 def test_extract_urls():
@@ -85,7 +85,7 @@ def test_build_message_dry_run():
 
 
 def test_records_roundtrip(tmp_path, monkeypatch):
-    from monitor.autobuy import records
+    from watcher.autobuy import records
 
     monkeypatch.setattr(records.paths, "autobuy_dir", lambda: tmp_path)
     product = ProductInfo(id=1, title="Produto X", url="https://kabum.com.br/produto/1", pix_price=10.5, card_price=12.0, available=True)
@@ -98,7 +98,7 @@ def test_records_roundtrip(tmp_path, monkeypatch):
 
 
 def test_records_with_timings(tmp_path, monkeypatch):
-    from monitor.autobuy import records
+    from watcher.autobuy import records
 
     monkeypatch.setattr(records.paths, "autobuy_dir", lambda: tmp_path)
     result = BuyResult(status=BuyStatus.PIX_READY, pix_code="00020126x", elapsed=23.5, timings={"produto": 2.0, "pix": 4.5})
@@ -116,7 +116,7 @@ def test_build_message_includes_timing():
 
 
 def test_records_sorted_desc(tmp_path, monkeypatch):
-    from monitor.autobuy import records
+    from watcher.autobuy import records
 
     monkeypatch.setattr(records.paths, "autobuy_dir", lambda: tmp_path)
     result = BuyResult(status=BuyStatus.PIX_READY, pix_code="00020126x")
@@ -127,7 +127,7 @@ def test_records_sorted_desc(tmp_path, monkeypatch):
 
 
 def test_autobuy_store_roundtrip(tmp_path):
-    from monitor.autobuy.storage import AutobuySettings, AutobuyStore
+    from watcher.autobuy.storage import AutobuySettings, AutobuyStore
 
     store = AutobuyStore(tmp_path / "autobuy.json")
     settings = AutobuySettings(enabled=True, real_mode=False, use_coupon=True)
@@ -139,8 +139,8 @@ def test_autobuy_store_roundtrip(tmp_path):
 
 
 def test_manager_find_item_respects_master_switch(tmp_path):
-    from monitor.autobuy.manager import AutobuyManager
-    from monitor.autobuy.storage import AutobuySettings, AutobuyStore
+    from watcher.autobuy.manager import AutobuyManager
+    from watcher.autobuy.storage import AutobuySettings, AutobuyStore
 
     store = AutobuyStore(tmp_path / "autobuy.json")
     item = WatchItem(id="w1", name="RTX 5060", max_price=2300.0, include=["rtx 5060"])
@@ -153,8 +153,8 @@ def test_manager_find_item_respects_master_switch(tmp_path):
 
 
 def test_manager_pick_coupon(tmp_path):
-    from monitor.autobuy.manager import AutobuyManager
-    from monitor.autobuy.storage import AutobuySettings, AutobuyStore
+    from watcher.autobuy.manager import AutobuyManager
+    from watcher.autobuy.storage import AutobuySettings, AutobuyStore
 
     store = AutobuyStore(tmp_path / "autobuy.json")
     store.save(AutobuySettings(enabled=True, use_coupon=True), [])

@@ -20,7 +20,7 @@ def test_arquivo_da_interface_compila(arquivo):
 
 
 def test_modulos_do_nucleo_compilam():
-    for arquivo in sorted((RAIZ / "monitor").rglob("*.py")):
+    for arquivo in sorted((RAIZ / "watcher").rglob("*.py")):
         if "__pycache__" in str(arquivo):
             continue
         ast.parse(arquivo.read_text(encoding="utf-8"), filename=str(arquivo))

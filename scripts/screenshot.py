@@ -11,8 +11,8 @@ import qasync
 from PyQt6.QtGui import QFont, QFontDatabase
 from PyQt6.QtWidgets import QApplication
 
-from monitor.models import Channel, ChannelKind, EngineState, Filter, LogLevel
-from monitor.reader import ChatMessage, ChatSummary
+from watcher.models import Channel, ChannelKind, EngineState, Filter, LogLevel
+from watcher.reader import ChatMessage, ChatSummary
 from ui.theme import apply_theme
 from ui.window import AppWindow
 
@@ -136,7 +136,7 @@ def main() -> int:
     ]
     logs = [
         ("Conectado como Vinicius", LogLevel.SUCCESS),
-        ("Bot @dbx_monitor_bot pronto", LogLevel.SUCCESS),
+        ("Bot @watcher_bot pronto", LogLevel.SUCCESS),
         ("Sistema online e monitorando", LogLevel.SUCCESS),
         ("Capturado de Pelando Cupons", LogLevel.CAPTURE),
         ("Enviado para Meu Canal de Ofertas", LogLevel.SUCCESS),

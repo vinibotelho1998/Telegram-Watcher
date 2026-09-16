@@ -21,12 +21,12 @@ from qfluentwidgets import (
     TransparentPushButton,
 )
 
-from monitor import paths
-from monitor.autobuy import registry
-from monitor.autobuy.criteria import Criteria
-from monitor.autobuy.manager import AutobuyManager
-from monitor.autobuy.models import WatchItem
-from monitor.autobuy.records import PixRecord, delete_record, load_records
+from watcher import paths
+from watcher.autobuy import registry
+from watcher.autobuy.criteria import Criteria
+from watcher.autobuy.manager import AutobuyManager
+from watcher.autobuy.models import WatchItem
+from watcher.autobuy.records import PixRecord, delete_record, load_records
 
 from ..common import PageView, clear_layout, make_vscroll
 from ..test_dialog import TestDialog
@@ -228,7 +228,7 @@ class AutobuyPage(PageView):
     def _session_left(self, store_id: str) -> str:
         import time
 
-        from monitor.autobuy.browser import session_expiry
+        from watcher.autobuy.browser import session_expiry
 
         spec = registry.get(store_id)
         if spec is None:
@@ -621,7 +621,7 @@ class AutobuyPage(PageView):
             os.startfile(path)
 
     def _open_log(self) -> None:
-        from monitor.autobuy import journal
+        from watcher.autobuy import journal
 
         caminho = journal.log_path()
         if not caminho.exists():

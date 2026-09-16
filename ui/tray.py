@@ -5,8 +5,8 @@ from collections.abc import Callable
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
-from monitor import APP_NAME
-from monitor.models import EngineState
+from watcher import APP_NAME
+from watcher.models import EngineState
 
 
 class SystemTray(QSystemTrayIcon):

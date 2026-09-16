@@ -1,7 +1,7 @@
 import pytest
 
-from monitor.detector import CouponDetector, matches_smart_rules
-from monitor.matching import (
+from watcher.detector import CouponDetector, matches_smart_rules
+from watcher.matching import (
     matches_exclude,
     matches_include,
     matches_keyword,

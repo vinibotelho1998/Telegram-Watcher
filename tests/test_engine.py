@@ -1,9 +1,9 @@
 import asyncio
 import types
 
-from monitor.config import AppConfig
-from monitor.engine import MonitorEngine
-from monitor.models import EngineState, Filter
+from watcher.config import AppConfig
+from watcher.engine import MonitorEngine
+from watcher.models import EngineState, Filter
 
 
 class FakeMessage:

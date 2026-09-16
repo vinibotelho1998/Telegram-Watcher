@@ -1,5 +1,5 @@
-from monitor.filtering import resolve_destinations
-from monitor.models import Filter
+from watcher.filtering import resolve_destinations
+from watcher.models import Filter
 
 DEFAULT = [-999]
 

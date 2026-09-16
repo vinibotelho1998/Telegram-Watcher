@@ -15,9 +15,9 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
-from monitor.autobuy import registry
-from monitor.autobuy.criteria import Criteria
-from monitor.autobuy.models import WatchItem
+from watcher.autobuy import registry
+from watcher.autobuy.criteria import Criteria
+from watcher.autobuy.models import WatchItem
 
 from .chips import WordChips
 from .theme import PALETTE

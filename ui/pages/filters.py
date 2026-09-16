@@ -14,8 +14,8 @@ from qfluentwidgets import (
     TransparentToolButton,
 )
 
-from monitor.detector import STORES
-from monitor.models import Filter
+from watcher.detector import STORES
+from watcher.models import Filter
 
 from ..common import PageView, clear_layout, make_vscroll
 from ..theme import PALETTE

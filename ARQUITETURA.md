@@ -1,6 +1,6 @@
 # Arquitetura
 
-Guia técnico do **Dbx Telegram Monitor** para quem for desenvolver no projeto.
+Guia técnico do **Telegram Watcher** para quem for desenvolver no projeto.
 
 ## Visão geral
 
@@ -48,7 +48,7 @@ ui/           Interface PyQt6
 tests/        Testes pytest do núcleo
 ```
 
-O auto-compra funciona em conjunto com o monitor mas é um componente separado: o motor apenas emite o texto capturado pelo callback genérico `on_text`, e o `AutobuyManager` decide se compra. A compra usa Playwright (`requirements-autobuy.txt` + `playwright install chromium`) com perfil persistente em `%APPDATA%\DbxTelegramMonitor\browser`, onde o login na loja é feito uma única vez pela janela real do site (nunca por formulário no app). O fluxo para na geração do código PIX: o pagamento é sempre manual.
+O auto-compra funciona em conjunto com o monitor mas é um componente separado: o motor apenas emite o texto capturado pelo callback genérico `on_text`, e o `AutobuyManager` decide se compra. A compra usa Playwright (`requirements-autobuy.txt` + `playwright install chromium`) com perfil persistente em `%APPDATA%\TelegramWatcher\browser`, onde o login na loja é feito uma única vez pela janela real do site (nunca por formulário no app). O fluxo para na geração do código PIX: o pagamento é sempre manual.
 
 Cada loja é um driver com a mesma interface: `fetch_product(page, url) -> ProductInfo` e `buy(url, max_price, confirm, coupon, min_price, quantity) -> BuyResult`. O `registry` casa a URL com a loja e instancia o driver certo, então adicionar uma loja é escrever um módulo e registrar um `StoreSpec`. Duas invariantes valem para todo driver: o pagamento é sempre PIX, e o driver **recusa finalizar** se a revisão não confirmar PIX. Quando aparece captcha, o driver alerta pelo callback `on_captcha` e espera a resolução manual em vez de falhar.
 
@@ -58,7 +58,7 @@ O `StoreSpec` declara as peculiaridades de cada loja. `requires_window=True` qua
 
 Os seletores vêm de mapeamento real no site, nunca de suposição, e há testes que travam as escolhas frágeis. Três armadilhas já custaram caro: na Amazon os `id` são gerados por sessão (`pp-8H7pkg-107`), então só `name` e `data-testid` servem; na Terabyte existe `#ppixcartao` (Pix + Cartão) ao lado de `#ppix` (PIX puro), e casar por `id*=pix` compraria metade no cartão; e a Terabyte devolve para `/Central.obj` quando a sessão expira, sem pedir login, o que o driver trata como `LOGIN_REQUIRED`.
 
-A leitura das conversas fica no `reader.py`, que só depende de um provedor de cliente Telethon e converte os objetos da biblioteca em `ChatSummary` e `ChatMessage`. Nada ali escreve no Telegram: a página Conversas lê o histórico, pagina para trás pelo `max_id`, busca dentro do canal e recebe as mensagens novas pelo callback `on_incoming` do motor, que dispara para toda mensagem, inclusive de canais que não são origem. Avatares e miniaturas ficam em cache no disco (`%APPDATA%\DbxTelegramMonitor\media`) e nunca são baixados duas vezes.
+A leitura das conversas fica no `reader.py`, que só depende de um provedor de cliente Telethon e converte os objetos da biblioteca em `ChatSummary` e `ChatMessage`. Nada ali escreve no Telegram: a página Conversas lê o histórico, pagina para trás pelo `max_id`, busca dentro do canal e recebe as mensagens novas pelo callback `on_incoming` do motor, que dispara para toda mensagem, inclusive de canais que não são origem. Avatares e miniaturas ficam em cache no disco (`%APPDATA%\TelegramWatcher\media`) e nunca são baixados duas vezes.
 
 O `matching_filters` existe para a interface poder dizer **qual** filtro casou com uma mensagem, e o `resolve_destinations` passou a ser uma casca em cima dele. Na thread de leitura cada mensagem mostra os filtros que a replicariam e o que o detector achou, o que transforma a tela em um laboratório de teste de filtros com mensagens reais.
 
@@ -80,7 +80,7 @@ A interface conversa com o núcleo apenas pela `AppWindow`, que detém a configu
 - Identificadores em inglês, textos visíveis ao usuário em português.
 - Sem comentários e sem docstrings. O código deve se explicar pelos nomes.
 - Type hints em assinaturas públicas. `from __future__ import annotations` em todos os módulos.
-- Dados sensíveis e voláteis vivem em `%APPDATA%\DbxTelegramMonitor` (`.env`, `data`, `sessions`, `logs`).
+- Dados sensíveis e voláteis vivem em `%APPDATA%\TelegramWatcher` (`.env`, `data`, `sessions`, `logs`).
 
 ## Rodar e testar
 
@@ -96,4 +96,4 @@ Os testes cobrem modelos, configuração, detector, correspondência de palavras
 
 ## Diretórios de dados
 
-`monitor/paths.py` centraliza os caminhos. Em desenvolvimento e no executável os dados persistentes ficam em `%APPDATA%\DbxTelegramMonitor`. Recursos da interface, como ícones, são resolvidos por `resource_path`, compatível com PyInstaller.
+`monitor/paths.py` centraliza os caminhos. Em desenvolvimento e no executável os dados persistentes ficam em `%APPDATA%\TelegramWatcher`. Recursos da interface, como ícones, são resolvidos por `resource_path`, compatível com PyInstaller.

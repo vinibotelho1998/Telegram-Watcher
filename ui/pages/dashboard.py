@@ -13,7 +13,7 @@ from qfluentwidgets import (
     StrongBodyLabel,
 )
 
-from monitor.models import EngineState
+from watcher.models import EngineState
 
 from ..common import PageView, make_vscroll
 from ..theme import PALETTE

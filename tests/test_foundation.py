@@ -1,6 +1,6 @@
-from monitor.config import AppConfig, _parse_aliases, _parse_ids
-from monitor.models import Channel, ChannelKind, Filter, Metrics
-from monitor.storage import ChannelCache, FilterStore
+from watcher.config import AppConfig, _parse_aliases, _parse_ids
+from watcher.models import Channel, ChannelKind, Filter, Metrics
+from watcher.storage import ChannelCache, FilterStore
 
 
 def test_filter_legacy_from_dict():
@@ -30,7 +30,7 @@ def test_filter_roundtrip():
 
 def test_config_roundtrip(tmp_path, monkeypatch):
     env = tmp_path / ".env"
-    monkeypatch.setattr("monitor.paths.env_file", lambda: env)
+    monkeypatch.setattr("watcher.paths.env_file", lambda: env)
     cfg = AppConfig(
         api_id=123, api_hash="abc", phone="+5511",
         source_ids=[-1, -2], destination_ids=[-9],

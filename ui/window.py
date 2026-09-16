@@ -15,14 +15,14 @@ from qfluentwidgets import (
     NavigationItemPosition,
 )
 
-from monitor import APP_ID, APP_NAME, VERSION, paths
-from monitor.autobuy.manager import AutobuyManager
-from monitor.autobuy.models import BuyResult, BuyStatus, WatchItem
-from monitor.autobuy.notify import build_message, send_pix_notification
-from monitor.config import AppConfig
-from monitor.engine import MonitorEngine
-from monitor.models import EngineState, Filter, LogLevel
-from monitor.storage import ChannelCache, FilterStore
+from watcher import APP_ID, APP_NAME, VERSION, paths
+from watcher.autobuy.manager import AutobuyManager
+from watcher.autobuy.models import BuyResult, BuyStatus, WatchItem
+from watcher.autobuy.notify import build_message, send_pix_notification
+from watcher.config import AppConfig
+from watcher.engine import MonitorEngine
+from watcher.models import EngineState, Filter, LogLevel
+from watcher.storage import ChannelCache, FilterStore
 
 from .dialogs import CodeDialog, FilterDialog, PasswordDialog, WatchDialog
 from .pages import (
@@ -192,11 +192,11 @@ class AppWindow(FluentWindow):
     def _on_captcha(self) -> None:
         aviso = "Captcha na tela! Resolva na janela do navegador — o robô espera 3 minutos e continua sozinho."
         self.alert(aviso)
-        self.schedule(self.engine.notify_me(f"[Dbx] {aviso}"))
+        self.schedule(self.engine.notify_me(f"[Watcher] {aviso}"))
 
     def _on_autobuy_alert(self, message: str) -> None:
         self.alert(message)
-        self.schedule(self.engine.notify_me(f"[Dbx] {message}"))
+        self.schedule(self.engine.notify_me(f"[Watcher] {message}"))
 
     def alert(self, message: str) -> None:
         self._toast(message, "warning")

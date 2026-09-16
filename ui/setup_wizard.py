@@ -16,7 +16,7 @@ from qfluentwidgets import (
     TitleLabel,
 )
 
-from monitor.models import EngineState
+from watcher.models import EngineState
 
 from .theme import PALETTE
 

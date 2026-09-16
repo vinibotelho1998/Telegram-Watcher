@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from playwright.async_api import async_playwright
 
-from monitor import paths
-from monitor.autobuy.browser import open_context, save_session_cookies
+from watcher import paths
+from watcher.autobuy.browser import open_context, save_session_cookies
 
 LOGIN_URLS = {
     "kabum": "https://www.kabum.com.br/login",

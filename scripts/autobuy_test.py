@@ -9,12 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from playwright.async_api import async_playwright
 
-from monitor.autobuy.browser import open_context
-from monitor.autobuy.kabum import KabumDriver
-from monitor.autobuy.models import BuyStatus
-from monitor.autobuy.notify import send_pix_notification
-from monitor.autobuy.resolver import find_kabum_product
-from monitor.config import AppConfig
+from watcher.autobuy.browser import open_context
+from watcher.autobuy.kabum import KabumDriver
+from watcher.autobuy.models import BuyStatus
+from watcher.autobuy.notify import send_pix_notification
+from watcher.autobuy.resolver import find_kabum_product
+from watcher.config import AppConfig
 
 
 def parse_args() -> argparse.Namespace:

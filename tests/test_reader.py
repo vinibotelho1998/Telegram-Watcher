@@ -1,9 +1,9 @@
 import asyncio
 from datetime import datetime, timezone
 
-from monitor.filtering import matching_filters
-from monitor.models import ChannelKind, Filter
-from monitor.reader import (
+from watcher.filtering import matching_filters
+from watcher.models import ChannelKind, Filter
+from watcher.reader import (
     ChatMessage,
     ChatReader,
     build_message,

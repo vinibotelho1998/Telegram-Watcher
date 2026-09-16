@@ -5,7 +5,7 @@ from PyQt6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel
 
-from monitor.models import EngineState
+from watcher.models import EngineState
 from .theme import PALETTE, STATE_STYLE, color
 
 

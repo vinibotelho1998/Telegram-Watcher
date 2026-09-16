@@ -21,7 +21,7 @@ from .filtering import resolve_destinations
 from .models import Channel, ChannelKind, EngineState, Filter, LogLevel, Metrics
 from .reader import ChatReader, build_message
 
-log = logging.getLogger("monitor.engine")
+log = logging.getLogger("watcher.engine")
 
 StateCb = Callable[[EngineState, str], None]
 LogCb = Callable[[str, LogLevel], None]
@@ -133,7 +133,7 @@ class MonitorEngine:
             session,
             self.config.api_id,
             self.config.api_hash,
-            device_model="Dbx Telegram Monitor",
+            device_model="Telegram Watcher",
             app_version=VERSION,
         )
         await self._user.connect()

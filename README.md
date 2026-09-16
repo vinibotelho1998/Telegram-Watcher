@@ -1,8 +1,8 @@
-# Dbx Telegram Monitor
+# Telegram Watcher
 
 Monitor e replicador de mensagens do Telegram com interface desktop moderna. Captura mensagens de vários canais ou grupos, aplica filtros inteligentes e replica em tempo real para os destinos que você escolher.
 
-[![Build](https://github.com/vinibotelho1998/Dbx-Telegram-Monitor/actions/workflows/build.yml/badge.svg)](https://github.com/vinibotelho1998/Dbx-Telegram-Monitor/actions/workflows/build.yml)
+[![Build](https://github.com/vinibotelho1998/Telegram-Watcher/actions/workflows/build.yml/badge.svg)](https://github.com/vinibotelho1998/Telegram-Watcher/actions/workflows/build.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/UI-PyQt6%20%2B%20Fluent-41CD52)
 ![Telethon](https://img.shields.io/badge/Telegram-Telethon-2CA5E0?logo=telegram&logoColor=white)
@@ -61,8 +61,8 @@ Nada é enviado por essa tela: ela só lê. Mensagens novas aparecem sozinhas en
 ## Instalação
 
 ```bash
-git clone https://github.com/vinibotelho1998/Dbx-Telegram-Monitor.git
-cd Dbx-Telegram-Monitor
+git clone https://github.com/vinibotelho1998/Telegram-Watcher.git
+cd Telegram-Watcher
 
 python -m venv .venv
 .venv\Scripts\activate
@@ -131,7 +131,7 @@ python -m pytest tests/ -q
 
 ```bash
 pip install pyinstaller
-pyinstaller DbxTelegramMonitor.spec
+pyinstaller TelegramWatcher.spec
 ```
 
 O executável é gerado em `dist`.
@@ -139,7 +139,7 @@ O executável é gerado em `dist`.
 ## Estrutura do projeto
 
 ```
-Dbx-Telegram-Monitor/
+Telegram-Watcher/
 ├── app.py                 Ponto de entrada, bootstrap do Qt e do asyncio
 ├── monitor/               Núcleo independente da interface
 │   ├── config.py          Credenciais e preferências
@@ -163,9 +163,9 @@ Dbx-Telegram-Monitor/
 
 ## Privacidade e segurança
 
-- As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\DbxTelegramMonitor`, nunca no repositório.
+- As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\TelegramWatcher`, nunca no repositório.
 - As sessões do Telegram são salvas localmente e estão no `.gitignore`.
-- A aba Conversas é somente leitura: o app nunca envia, apaga ou marca mensagens como lidas por você. Fotos e avatares baixados ficam em cache em `%APPDATA%\DbxTelegramMonitor\media`.
+- A aba Conversas é somente leitura: o app nunca envia, apaga ou marca mensagens como lidas por você. Fotos e avatares baixados ficam em cache em `%APPDATA%\TelegramWatcher\media`.
 - Nada é enviado para servidores de terceiros. A comunicação acontece direto com a API do Telegram.
 
 ## Documentação técnica
@@ -176,4 +176,4 @@ Arquitetura, convenções e decisões de design estão em [ARQUITETURA.md](ARQUI
 
 Distribuído sob a [licença MIT](LICENSE).
 
-Desenvolvido por Dbx.
+Desenvolvido por Vinicius Botelho.

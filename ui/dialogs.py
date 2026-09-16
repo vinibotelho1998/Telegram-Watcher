@@ -12,9 +12,9 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
-from monitor.config import AppConfig
-from monitor.detector import STORES
-from monitor.models import Filter
+from watcher.config import AppConfig
+from watcher.detector import STORES
+from watcher.models import Filter
 
 from .watch_dialog import WatchDialog
 

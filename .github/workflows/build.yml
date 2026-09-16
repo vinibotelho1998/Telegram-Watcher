@@ -38,11 +38,11 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = (python -c "from monitor import VERSION; print(VERSION)")
+          $version = (python -c "from watcher import VERSION; print(VERSION)")
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Gerar executavel
-        run: pyinstaller DbxTelegramMonitor.spec --noconfirm
+        run: pyinstaller TelegramWatcher.spec --noconfirm
 
       - name: Instalar Inno Setup
         run: choco install innosetup --no-progress -y
@@ -54,7 +54,7 @@ jobs:
       - name: Publicar artifact do instalador
         uses: actions/upload-artifact@v4
         with:
-          name: Dbx-Telegram-Monitor-Setup
+          name: Telegram-Watcher-Setup
           path: installer/*.exe
           if-no-files-found: error
 
@@ -63,7 +63,7 @@ jobs:
         with:
           tag_name: latest
           target_commitish: ${{ github.sha }}
-          name: Dbx Telegram Monitor v${{ steps.version.outputs.version }}
+          name: Telegram Watcher v${{ steps.version.outputs.version }}
           make_latest: true
           overwrite_files: true
           files: installer/*.exe

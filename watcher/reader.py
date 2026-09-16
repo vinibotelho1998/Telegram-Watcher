@@ -10,7 +10,7 @@ from typing import Any, Optional
 from . import paths
 from .models import ChannelKind
 
-log = logging.getLogger("monitor.reader")
+log = logging.getLogger("watcher.reader")
 
 ClientProvider = Callable[[], Optional[Any]]
 

@@ -14,7 +14,7 @@ from qfluentwidgets import (
     SwitchButton,
 )
 
-from monitor import APP_NAME, AUTHOR, VERSION
+from watcher import APP_NAME, AUTHOR, VERSION
 
 from ..common import PageView, make_vscroll
 from ..theme import PALETTE

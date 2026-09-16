@@ -38,7 +38,7 @@ def _read_cookie_rows(domain: str, names: tuple[str, ...]) -> list[tuple[str, in
     origem = paths.browser_profile_dir().joinpath(*_COOKIE_FILE)
     if not origem.exists() or not names:
         return []
-    copia = Path(tempfile.gettempdir()) / f"dbx-cookies-{os.getpid()}.db"
+    copia = Path(tempfile.gettempdir()) / f"watcher-cookies-{os.getpid()}.db"
     try:
         shutil.copy2(origem, copia)
     except OSError:

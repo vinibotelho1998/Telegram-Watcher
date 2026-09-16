@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-start "Dbx Telegram Monitor" pythonw "%~dp0app.py"
+start "Telegram Watcher" pythonw "%~dp0app.py"

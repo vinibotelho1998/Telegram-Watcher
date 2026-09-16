@@ -25,7 +25,7 @@ def _seconds(value: float) -> str:
 def build_message(result: BuyResult) -> str:
     product = result.product
     header = "PIX gerado pelo Auto-Compra" if result.status == BuyStatus.PIX_READY else "Auto-Compra (dry-run concluído)"
-    lines = [f"[Dbx] {header}"]
+    lines = [f"[Watcher] {header}"]
     if product:
         lines.append(product.title)
         lines.append(f"À vista no PIX: R$ {product.pix_price:.2f}")
@@ -53,7 +53,7 @@ async def send_pix_notification(config: AppConfig, result: BuyResult) -> bool:
         session,
         config.api_id,
         config.api_hash,
-        device_model="Dbx Telegram Monitor",
+        device_model="Telegram Watcher",
         app_version=VERSION,
     )
     try:

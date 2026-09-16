@@ -11,7 +11,7 @@ from qfluentwidgets import (
     SubtitleLabel,
 )
 
-from monitor.autobuy import registry
+from watcher.autobuy import registry
 
 from .theme import PALETTE
 

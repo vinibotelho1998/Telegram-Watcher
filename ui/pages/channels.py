@@ -15,7 +15,7 @@ from qfluentwidgets import (
     TransparentToolButton,
 )
 
-from monitor.models import Channel
+from watcher.models import Channel
 
 from ..common import PageView, clear_layout, make_vscroll
 from ..theme import PALETTE

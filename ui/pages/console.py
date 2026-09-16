@@ -6,7 +6,7 @@ from time import strftime
 from PyQt6.QtWidgets import QTextEdit, QWidget
 from qfluentwidgets import ComboBox, FluentIcon, TransparentPushButton
 
-from monitor.models import LogLevel
+from watcher.models import LogLevel
 
 from ..common import PageView
 from ..theme import LOG_COLOR, PALETTE

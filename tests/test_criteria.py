@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from monitor.autobuy.criteria import Criteria
-from monitor.autobuy.models import WatchItem
+from watcher.autobuy.criteria import Criteria
+from watcher.autobuy.models import WatchItem
 
 
 def test_to_include_joins_all_and_any():
