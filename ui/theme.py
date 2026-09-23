@@ -27,6 +27,8 @@ _LIGHT_TEXT = {
     "muted": "#5F6670",
 }
 
+MUTED = (_LIGHT_TEXT["muted"], PALETTE["muted"])
+
 STATE_STYLE: dict[EngineState, tuple[str, str]] = {
     EngineState.OFFLINE: ("offline", "Offline"),
     EngineState.CONNECTING: ("busy", "Conectando"),

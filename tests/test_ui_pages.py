@@ -2289,3 +2289,29 @@ def test_cartao_do_filtro_avisa_o_que_ele_replica_e_liga_os_botoes(qapp):
     excluir.click()
     assert editados == [filtros[1]] and apagados == ["b"]
     pagina.deleteLater()
+
+
+def test_topo_da_janela_mostra_a_versao_ao_lado_do_nome(qapp, monkeypatch):
+    from PyQt6.QtCore import QTimer
+
+    from ui.window import AppWindow
+    from watcher import APP_NAME, VERSION
+
+    monkeypatch.setattr(QTimer, "singleShot", lambda *_args, **_kwargs: None)
+    loop = asyncio.new_event_loop()
+    janela = AppWindow(loop)
+    janela._tray = None
+    janela.resize(960, 640)
+    janela.show()
+    qapp.processEvents()
+    barra = janela.titleBar
+    versoes = [w for w in barra.findChildren(QLabel) if w.isVisible() and w.text() == f"v{VERSION}"]
+    assert janela.windowTitle() == f"{APP_NAME} v{VERSION}"
+    assert barra.titleLabel.text() == APP_NAME
+    assert len(versoes) == 1
+    assert versoes[0].geometry().left() >= barra.titleLabel.geometry().right()
+    assert barra.rect().contains(versoes[0].geometry())
+    assert janela.childAt(versoes[0].mapTo(janela, versoes[0].rect().center())) is versoes[0]
+    janela.hide()
+    janela.deleteLater()
+    loop.close()

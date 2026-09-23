@@ -4,11 +4,13 @@ import asyncio
 import os
 import sys
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor, QIcon
 from PyQt6.QtWidgets import QApplication
 from qfluentwidgets import (
+    CaptionLabel,
     FluentIcon,
+    FluentTitleBar,
     FluentWindow,
     InfoBar,
     InfoBarPosition,
@@ -36,7 +38,7 @@ from .pages import (
     SettingsPage,
 )
 from .setup_wizard import SetupWizard
-from .theme import apply_theme
+from .theme import MUTED, apply_theme
 from .tray import SystemTray
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -45,6 +47,19 @@ TRAY_FLAG = "--bandeja"
 
 def _digits(value: str) -> str:
     return "".join(c for c in str(value or "") if c.isdigit())
+
+
+class AppTitleBar(FluentTitleBar):
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.version_label = CaptionLabel(f"v{VERSION}", self)
+        self.version_label.setTextColor(QColor(MUTED[0]), QColor(MUTED[1]))
+        self.hBoxLayout.insertWidget(
+            2, self.version_label, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+
+    def setTitle(self, title: str) -> None:  # noqa: N802
+        super().setTitle(title.removesuffix(f" v{VERSION}"))
 
 
 class AppWindow(FluentWindow):
@@ -100,6 +115,8 @@ class AppWindow(FluentWindow):
         return QIcon(str(icon_path)) if icon_path.exists() else QIcon()
 
     def _init_window(self) -> None:
+        self.setTitleBar(AppTitleBar(self))
+        self.navigationInterface.displayModeChanged.connect(self.titleBar.raise_)
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
         self.setWindowIcon(self._icon)
         self.setMinimumSize(960, 640)
