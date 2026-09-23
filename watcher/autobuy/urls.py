@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import re
 
-_KABUM = re.compile(r"kabum\.com\.br/produto/(\d+)", re.IGNORECASE)
-_AMAZON = re.compile(r"amazon\.com(?:\.br)?/(?:.*/)?(?:dp|gp/product)/([A-Z0-9]{10})", re.IGNORECASE)
-_TERABYTE = re.compile(r"terabyteshop\.com\.br/produto/(\d+)", re.IGNORECASE)
+_HOST = r"^https?://(?:[a-z0-9-]+\.)*"
+_KABUM = re.compile(_HOST + r"kabum\.com\.br(?::\d+)?/produto/(\d+)", re.IGNORECASE)
+_AMAZON = re.compile(
+    _HOST + r"amazon\.com(?:\.br)?(?::\d+)?/(?:[^?#]*/)?(?:dp|gp/product)/([A-Z0-9]{10})", re.IGNORECASE
+)
+_TERABYTE = re.compile(_HOST + r"terabyteshop\.com\.br(?::\d+)?/produto/(\d+)", re.IGNORECASE)
 
 
 def kabum_id(url: str) -> int | None:
-    match = _KABUM.search(url or "")
+    match = _KABUM.search((url or "").strip())
     return int(match.group(1)) if match else None
 
 
@@ -21,7 +24,7 @@ def kabum_canonical(url: str) -> str:
 
 
 def amazon_id(url: str) -> str | None:
-    match = _AMAZON.search(url or "")
+    match = _AMAZON.search((url or "").strip())
     return match.group(1).upper() if match else None
 
 
@@ -35,7 +38,7 @@ def amazon_canonical(url: str) -> str:
 
 
 def terabyte_id(url: str) -> int | None:
-    match = _TERABYTE.search(url or "")
+    match = _TERABYTE.search((url or "").strip())
     return int(match.group(1)) if match else None
 
 

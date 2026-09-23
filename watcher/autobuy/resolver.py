@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 import urllib.request
 
+from .urls import kabum_id
+
 _URL = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
-_PRODUCT = re.compile(r"kabum\.com\.br/produto/(\d+)", re.IGNORECASE)
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
@@ -16,8 +17,7 @@ def extract_urls(text: str) -> list[str]:
 
 
 def product_id(url: str) -> int | None:
-    match = _PRODUCT.search(url or "")
-    return int(match.group(1)) if match else None
+    return kabum_id(url)
 
 
 def resolve(url: str, timeout: float = 10.0) -> str:
