@@ -18,8 +18,8 @@ from telethon.errors import (
 from . import VERSION, paths
 from .config import AppConfig
 from .filtering import resolve_destinations
-from .models import Channel, ChannelKind, EngineState, Filter, LogLevel, Metrics
-from .reader import ChatReader, build_message
+from .models import Channel, EngineState, Filter, LogLevel, Metrics
+from .reader import ChatReader, build_message, dialog_kind
 
 log = logging.getLogger("watcher.engine")
 
@@ -84,7 +84,7 @@ class MonitorEngine:
         self._me = None
         self._bot_me = None
         self._handler = None
-        self._seen: set[tuple[int, int]] = set()
+        self._seen: dict[tuple[int, int], None] = {}
         self._send_lock = asyncio.Lock()
         self._last_send = 0.0
 
@@ -102,6 +102,9 @@ class MonitorEngine:
     async def start(self) -> bool:
         if self.is_running:
             return True
+        if self.state == EngineState.STOPPING:
+            self._log("Aguarde o monitor terminar de parar", LogLevel.WARNING)
+            return False
         if not self.config.is_ready:
             self._set_state(EngineState.ERROR, "Credenciais incompletas")
             self._log("Configure API ID, API Hash e telefone", LogLevel.ERROR)
@@ -152,12 +155,12 @@ class MonitorEngine:
                 return False
             self._log(f"Enviando código para {self.config.phone}", LogLevel.INFO)
             await self._user.send_code_request(self.config.phone)
-            code = await self._code_provider(self.config.phone)
+            code = "".join((await self._code_provider(self.config.phone) or "").split())
             if not code:
                 self._log("Login cancelado", LogLevel.WARNING)
                 return False
             try:
-                await self._user.sign_in(self.config.phone, code.strip())
+                await self._user.sign_in(self.config.phone, code)
             except PhoneCodeInvalidError:
                 self._log("Código inválido", LogLevel.ERROR)
                 return False
@@ -207,9 +210,9 @@ class MonitorEngine:
         key = (chat_id, message.id)
         if key in self._seen:
             return
-        self._seen.add(key)
+        self._seen[key] = None
         if len(self._seen) > _SEEN_LIMIT:
-            self._seen = set(list(self._seen)[-_SEEN_LIMIT // 2:])
+            self._seen = dict.fromkeys(list(self._seen)[-(_SEEN_LIMIT // 2):])
 
         text = message.message or getattr(message, "text", "") or ""
         self.metrics.mark_capture()
@@ -224,7 +227,11 @@ class MonitorEngine:
         except Exception:
             log.exception("Erro no hook de texto")
 
-        destinations = resolve_destinations(self._filters(), chat_id, text, self.config.destination_ids)
+        destinations = [
+            dest
+            for dest in resolve_destinations(self._filters(), chat_id, text, self.config.destination_ids)
+            if dest != chat_id
+        ]
         if not destinations:
             self.metrics.filtered += 1
             self._on_metrics()
@@ -246,19 +253,15 @@ class MonitorEngine:
                 continue
             name = self.config.channel_name(dest)
             try:
-                await self._send(message, dest)
+                try:
+                    await self._send(message, dest)
+                except FloodWaitError as exc:
+                    self._log(f"Limite do Telegram: aguardando {exc.seconds}s", LogLevel.WARNING)
+                    await asyncio.sleep(exc.seconds + 1)
+                    await self._send(message, dest)
                 self.metrics.forwarded += 1
                 self._on_event({"time": _now(), "source": name, "text": "Replicado", "status": "forwarded", "chat_id": dest})
                 self._log(f"Enviado para {name}", LogLevel.SUCCESS)
-            except FloodWaitError as exc:
-                self._log(f"Limite do Telegram: aguardando {exc.seconds}s", LogLevel.WARNING)
-                await asyncio.sleep(exc.seconds + 1)
-                try:
-                    await self._send(message, dest)
-                    self.metrics.forwarded += 1
-                except Exception as retry_exc:
-                    self.metrics.failed += 1
-                    self._log(f"Falha em {name}: {retry_exc}", LogLevel.ERROR)
             except Exception as exc:
                 self.metrics.failed += 1
                 self._on_event({"time": _now(), "source": name, "text": f"Erro: {exc}", "status": "failed", "chat_id": dest})
@@ -367,11 +370,5 @@ class MonitorEngine:
             return []
         result: list[Channel] = []
         async for dialog in self._user.iter_dialogs(limit=400):
-            if dialog.is_channel:
-                kind = ChannelKind.CHANNEL
-            elif dialog.is_group:
-                kind = ChannelKind.GROUP
-            else:
-                kind = ChannelKind.USER
-            result.append(Channel(id=dialog.id, name=dialog.name or "Sem nome", kind=kind))
+            result.append(Channel(id=dialog.id, name=dialog.name or "Sem nome", kind=dialog_kind(dialog)))
         return result
