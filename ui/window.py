@@ -218,7 +218,7 @@ class AppWindow(FluentWindow):
     async def _on_autobuy_result(self, result: BuyResult) -> None:
         message = build_message(result)
         sent = await self.engine.notify_me(message, result.screenshot or None)
-        if not sent:
+        if not sent and self.engine.state in (EngineState.OFFLINE, EngineState.ERROR):
             await send_pix_notification(self.config, result)
         self.autobuy_page.refresh()
         if result.status == BuyStatus.PIX_READY:
@@ -292,6 +292,8 @@ class AppWindow(FluentWindow):
                 self.channel_cache.save(channels)
                 self.channels_page.refresh()
                 self._toast(f"{len(channels)} canais sincronizados", "success")
+        except Exception as exc:
+            self._toast(f"Falha ao sincronizar os canais: {exc}", "error")
         finally:
             self.channels_page.set_syncing(False)
 

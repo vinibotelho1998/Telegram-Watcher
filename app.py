@@ -28,6 +28,16 @@ def _setup_logging() -> None:
     root.addHandler(handler)
 
 
+def _log_unhandled(kind, value, trace) -> None:
+    logging.getLogger("watcher").error("Erro não tratado na interface", exc_info=(kind, value, trace))
+
+
+def _log_async_error(_loop, context: dict) -> None:
+    logging.getLogger("watcher").error(
+        context.get("message") or "Erro não tratado em tarefa", exc_info=context.get("exception")
+    )
+
+
 def _set_app_id() -> None:
     if os.name == "nt":
         import ctypes
@@ -69,6 +79,7 @@ def _listen_for_instances(window: AppWindow) -> QLocalServer:
 
 def main() -> int:
     _setup_logging()
+    sys.excepthook = _log_unhandled
     _set_app_id()
 
     app = QApplication(sys.argv)
@@ -81,6 +92,7 @@ def main() -> int:
     apply_theme(dark=True)
 
     loop = qasync.QEventLoop(app)
+    loop.set_exception_handler(_log_async_error)
     asyncio.set_event_loop(loop)
 
     window = AppWindow(loop)
