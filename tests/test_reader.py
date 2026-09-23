@@ -220,3 +220,146 @@ def test_avatar_interrompido_nao_fica_no_cache(tmp_path, monkeypatch):
     reader = ChatReader(lambda: DownloadClient(fail=False))
     path = run(reader.avatar(-100))
     assert path is not None and path.read_bytes() == b"imagem-completa"
+
+
+def test_memoria_de_mensagens_nao_cresce_sem_limite():
+    from watcher import reader as modulo
+
+    leitor = ChatReader(lambda: None)
+    for mid in range(1, modulo._RAW_LIMIT + 2):
+        leitor.remember(-100, FakeMessage(mid, "x"))
+    assert len(leitor._raw) == modulo._RAW_LIMIT // 2 + 1
+    assert (-100, 1) not in leitor._raw
+    assert (-100, modulo._RAW_LIMIT + 1) in leitor._raw
+    leitor.forget()
+    assert leitor._raw == {}
+
+
+def test_nome_do_remetente_por_ordem_de_preferencia():
+    assert build_message(FakeMessage(post_author="Equipe Promo"), -1).sender_name == "Equipe Promo"
+    assert build_message(FakeMessage(sender=FakeSender(title="Canal X", username="canalx")), -1).sender_name == "Canal X"
+    assert build_message(FakeMessage(sender=FakeSender(username="ana_s")), -1).sender_name == "ana_s"
+    assert build_message(FakeMessage(sender=FakeSender(first_name="Ana")), -1).sender_name == "Ana"
+    assert build_message(FakeMessage(sender=None), -1, "Ofertas").sender_name == "Ofertas"
+    assert build_message(FakeMessage(sender=FakeSender()), -1, "Ofertas").sender_name == "Ofertas"
+
+
+def test_mensagem_de_servico_resposta_edicao_e_visualizacoes():
+    class MessageActionPinMessage:
+        pass
+
+    servico = build_message(FakeMessage(action=MessageActionPinMessage()), -1)
+    assert servico.service == "PinMessage"
+    assert not servico.is_empty
+    assert preview_text(servico) == "PinMessage"
+    resposta = build_message(
+        FakeMessage(9, "ok", reply_to=type("R", (), {"reply_to_msg_id": 7})(), edit_date=object(), views=None, out=True),
+        -1,
+    )
+    assert (resposta.reply_to_id, resposta.edited, resposta.views, resposta.outgoing) == (7, True, 0, True)
+    assert ChatMessage(id=1, chat_id=-1).is_empty
+
+
+def test_tipos_de_midia_restantes():
+    assert detect_media(FakeMessage(video_note=object())) == ("video", "Vídeo")
+    assert detect_media(FakeMessage(gif=object(), document=FakeDocument()))[0] == "gif"
+    assert detect_media(FakeMessage(sticker=object()))[0] == "sticker"
+    assert detect_media(FakeMessage(audio=object()))[0] == "audio"
+    assert detect_media(FakeMessage(poll=object())) == ("poll", "Enquete")
+    assert detect_media(FakeMessage(contact=object()))[0] == "contact"
+    assert detect_media(FakeMessage(geo=object())) == ("location", "Localização")
+    assert detect_media(FakeMessage(media=object())) == ("file", "Arquivo")
+    sem_nome = FakeDocument()
+    sem_nome.attributes = []
+    assert detect_media(FakeMessage(document=sem_nome)) == ("file", "Arquivo")
+
+
+def test_resumo_sem_ultima_mensagem_e_sem_nome():
+    dialogo = FakeDialog(name="", message=None, unread=None)
+    dialogo.date = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    dialogo.entity = None
+    resumo = build_summary(dialogo)
+    assert resumo.name == "Sem nome"
+    assert (resumo.preview, resumo.unread, resumo.username, resumo.participants) == ("", 0, "", 0)
+    assert resumo.date == dialogo.date
+
+
+def test_miniatura_so_para_foto_e_video_e_so_de_mensagem_conhecida(tmp_path, monkeypatch):
+    monkeypatch.setattr("watcher.reader.paths.thumb_cache_dir", lambda: tmp_path)
+    cliente = DownloadClient(fail=False)
+    leitor = ChatReader(lambda: cliente)
+    leitor.remember(-100, FakeMessage(1, "", document=FakeDocument()))
+    assert run(leitor.thumbnail(-100, 1)) is None
+    assert run(leitor.thumbnail(-100, 2)) is None
+    leitor.remember(-100, FakeMessage(3, "", video=object()))
+    primeira = run(leitor.thumbnail(-100, 3))
+    assert primeira == tmp_path / "-100_3.jpg"
+    cliente.fail = True
+    assert run(leitor.thumbnail(-100, 3)) == primeira
+
+
+def test_conversa_sem_foto_nao_e_consultada_de_novo_ate_reconectar(tmp_path, monkeypatch):
+    monkeypatch.setattr("watcher.reader.paths.avatar_cache_dir", lambda: tmp_path)
+
+    class SemFoto:
+        pedidos = 0
+
+        def is_connected(self):
+            return True
+
+        async def download_profile_photo(self, entity, file=None):
+            SemFoto.pedidos += 1
+            return None
+
+    leitor = ChatReader(lambda: SemFoto())
+    assert run(leitor.avatar(-100)) is None
+    assert run(leitor.avatar(-100)) is None
+    assert SemFoto.pedidos == 1
+    leitor.forget()
+    assert run(leitor.avatar(-100)) is None
+    assert SemFoto.pedidos == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_busca_repassa_o_termo_limpo_e_devolve_em_ordem():
+    client = FakeClient(messages=[FakeMessage(5, "cupom novo"), FakeMessage(3, "cupom velho")])
+    leitor = ChatReader(lambda: client)
+    mensagens = run(leitor.search(-100, "  cupom  ", limit=10))
+    assert [m.id for m in mensagens] == [3, 5]
+    assert client.calls == [(-100, {"search": "cupom", "limit": 10})]
+    assert (-100, 5) in leitor._raw
+
+
+def test_cliente_desconectado_conta_como_indisponivel(tmp_path, monkeypatch):
+    monkeypatch.setattr("watcher.reader.paths.avatar_cache_dir", lambda: tmp_path)
+    clientes = {"atual": FakeClient(connected=False)}
+    leitor = ChatReader(lambda: clientes["atual"])
+    assert leitor.available is False
+    assert run(leitor.search(-100, "cupom")) == []
+    assert run(leitor.avatar(-100)) is None
+    clientes["atual"] = DownloadClient(fail=False)
+    foto = run(leitor.avatar(-100))
+    assert foto is not None and foto.read_bytes() == b"imagem-completa"
+
+
+def test_lista_de_conversas_vem_resumida_na_ordem_do_telegram():
+    client = FakeClient(dialogs=[FakeDialog(-1, "Ofertas", unread=2), FakeDialog(-2, "Grupo", group=True, unread=0)])
+    resumos = run(ChatReader(lambda: client).dialogs())
+    assert [(r.id, r.name, r.kind, r.unread) for r in resumos] == [
+        (-1, "Ofertas", ChannelKind.CHANNEL, 2),
+        (-2, "Grupo", ChannelKind.GROUP, 0),
+    ]
+
+
+def test_foto_baixada_que_nao_entra_no_cache_e_descartada(tmp_path, monkeypatch):
+    from watcher import reader as modulo
+
+    monkeypatch.setattr("watcher.reader.paths.avatar_cache_dir", lambda: tmp_path)
+
+    def travado(_origem, _destino):
+        raise PermissionError(32, "cache em uso")
+
+    monkeypatch.setattr(modulo.os, "replace", travado)
+    assert run(ChatReader(lambda: DownloadClient(fail=False)).avatar(-100)) is None
+    monkeypatch.undo()
+    assert list(tmp_path.iterdir()) == []
