@@ -45,9 +45,18 @@ class AutobuyStore:
         data = read_json(self.path, {})
         if not isinstance(data, dict):
             data = {}
-        settings = AutobuySettings.from_dict(data.get("settings") or {})
-        raw_items = data.get("items") or []
-        items = [WatchItem.from_dict(item) for item in raw_items if isinstance(item, dict)]
+        try:
+            settings = AutobuySettings.from_dict(data.get("settings") or {})
+        except (AttributeError, ValueError, TypeError):
+            settings = AutobuySettings()
+        items: list[WatchItem] = []
+        for item in data.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                items.append(WatchItem.from_dict(item))
+            except (ValueError, TypeError):
+                continue
         return settings, items
 
     def save(self, settings: AutobuySettings, items: list[WatchItem]) -> bool:

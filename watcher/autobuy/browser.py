@@ -6,6 +6,7 @@ from pathlib import Path
 from playwright.async_api import BrowserContext, Playwright
 
 from .. import paths
+from ..storage import write_text_atomic
 
 _LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 
@@ -102,9 +103,7 @@ async def save_session_cookies(context: BrowserContext) -> int:
     voláteis = [c for c in cookies if not c.get("expires") or c["expires"] <= 0]
     if not voláteis:
         return 0
-    try:
-        _session_file().write_text(json.dumps(voláteis, ensure_ascii=False), encoding="utf-8")
-    except OSError:
+    if not write_text_atomic(_session_file(), json.dumps(voláteis, ensure_ascii=False)):
         return 0
     return len(voláteis)
 

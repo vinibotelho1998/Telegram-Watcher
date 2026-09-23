@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from dotenv import dotenv_values
 
 from . import paths
+from .storage import write_text_atomic
+
+_ALIAS_SEPARATOR = re.compile(r",(?=-?\d+:)")
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -38,7 +42,7 @@ def _parse_aliases(value: Any) -> dict[int, str]:
     if not value:
         return {}
     out: dict[int, str] = {}
-    for pair in str(value).split(","):
+    for pair in _ALIAS_SEPARATOR.split(str(value)):
         if ":" not in pair:
             continue
         raw_id, _, name = pair.partition(":")
@@ -47,6 +51,11 @@ def _parse_aliases(value: Any) -> dict[int, str]:
         except ValueError:
             continue
     return out
+
+
+def _quote(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
 
 
 @dataclass
@@ -65,7 +74,7 @@ class AppConfig:
     @classmethod
     def load(cls) -> "AppConfig":
         path = paths.env_file()
-        raw = dotenv_values(path, encoding="utf-8") if path.exists() else {}
+        raw = dotenv_values(path, encoding="utf-8", interpolate=False) if path.exists() else {}
         return cls(
             api_id=_to_int(raw.get("API_ID")),
             api_hash=(raw.get("API_HASH") or "").strip(),
@@ -85,7 +94,7 @@ class AppConfig:
             setattr(self, f, getattr(fresh, f))
 
     def save(self) -> bool:
-        aliases = ",".join(f"{cid}:{name}" for cid, name in self.aliases.items() if name)
+        aliases = ",".join(f"{cid}:{' '.join(name.split())}" for cid, name in self.aliases.items() if name)
         lines = [
             f"API_ID={self.api_id}",
             f"API_HASH={self.api_hash}",
@@ -93,17 +102,13 @@ class AppConfig:
             f"BOT_TOKEN={self.bot_token}",
             f"SOURCE_IDS={','.join(map(str, self.source_ids))}",
             f"DESTINATION_IDS={','.join(map(str, self.destination_ids))}",
-            f"SOURCE_ALIASES={aliases}",
+            f"SOURCE_ALIASES={_quote(aliases)}",
             f"AUTO_START={str(self.auto_start).lower()}",
             f"ALLOW_SELF_MESSAGES={str(self.allow_self).lower()}",
             f"DEBUG={str(self.debug).lower()}",
             "",
         ]
-        try:
-            paths.env_file().write_text("\n".join(lines), encoding="utf-8")
-            return True
-        except OSError:
-            return False
+        return write_text_atomic(paths.env_file(), "\n".join(lines))
 
     @property
     def is_ready(self) -> bool:
