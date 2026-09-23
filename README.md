@@ -98,7 +98,7 @@ Garantias do robô, em qualquer loja:
 
 - **O pagamento é sempre PIX.** Se a tela de revisão não confirmar PIX, ele não finaliza — importante na Amazon, cujo padrão é cartão de crédito.
 - **Ele nunca paga.** Para no código PIX e entrega pra você.
-- **Captcha não derruba a compra:** o robô apita, traz a janela pra frente e espera você resolver, retomando sozinho depois.
+- **Captcha não derruba a compra com o navegador visível:** o robô apita, traz a janela pra frente e espera você resolver, retomando sozinho depois. Com **Mostrar o navegador** desligado não há janela para resolver, então a compra para na hora e o aviso explica o motivo.
 - **Vigia de sessão:** de tempos em tempos ele confere se a conta da loja continua conectada e avisa com som e Telegram se cair.
 
 O botão **Testar o fluxo de compra** roda tudo isso sob demanda com um produto que você escolher, em três níveis: só consultar preço, simulação até a revisão, ou ir até gerar o PIX.
