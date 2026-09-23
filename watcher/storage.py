@@ -79,7 +79,7 @@ class ChannelCache:
             for item in data:
                 try:
                     out.append(Channel.from_dict(item))
-                except (KeyError, ValueError, TypeError):
+                except (AttributeError, KeyError, ValueError, TypeError):
                     continue
         return out
 

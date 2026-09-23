@@ -51,6 +51,21 @@ def test_config_roundtrip(tmp_path, monkeypatch):
     assert loaded.channel_name(-5) == "ID -5"
 
 
+def test_tema_escolhido_e_lembrado_e_env_antigo_abre_escuro(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    monkeypatch.setattr("watcher.paths.env_file", lambda: env)
+    env.write_text("API_ID=1\nAPI_HASH=x\nPHONE_NUMBER=+55\n", encoding="utf-8")
+    antigo = AppConfig.load()
+    assert antigo.dark_theme is True
+    assert antigo.tray_hint_shown is False
+    antigo.dark_theme = False
+    antigo.tray_hint_shown = True
+    assert antigo.save()
+    lido = AppConfig.load()
+    assert lido.dark_theme is False
+    assert lido.tray_hint_shown is True
+
+
 def test_parse_helpers():
     assert _parse_ids("-1, -2 ,x, 3") == [-1, -2, 3]
     assert _parse_aliases("bad,-1:Canal A,-2:Outro") == {-1: "Canal A", -2: "Outro"}

@@ -19,7 +19,9 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _to_bool(value: Any) -> bool:
+def _to_bool(value: Any, default: bool = False) -> bool:
+    if value is None or not str(value).strip():
+        return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -70,6 +72,8 @@ class AppConfig:
     auto_start: bool = False
     allow_self: bool = False
     debug: bool = False
+    dark_theme: bool = True
+    tray_hint_shown: bool = False
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -86,6 +90,8 @@ class AppConfig:
             auto_start=_to_bool(raw.get("AUTO_START")),
             allow_self=_to_bool(raw.get("ALLOW_SELF_MESSAGES")),
             debug=_to_bool(raw.get("DEBUG")),
+            dark_theme=_to_bool(raw.get("DARK_THEME"), default=True),
+            tray_hint_shown=_to_bool(raw.get("TRAY_HINT_SHOWN")),
         )
 
     def reload(self) -> None:
@@ -106,6 +112,8 @@ class AppConfig:
             f"AUTO_START={str(self.auto_start).lower()}",
             f"ALLOW_SELF_MESSAGES={str(self.allow_self).lower()}",
             f"DEBUG={str(self.debug).lower()}",
+            f"DARK_THEME={str(self.dark_theme).lower()}",
+            f"TRAY_HINT_SHOWN={str(self.tray_hint_shown).lower()}",
             "",
         ]
         return write_text_atomic(paths.env_file(), "\n".join(lines))

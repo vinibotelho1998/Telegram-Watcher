@@ -12,6 +12,7 @@ class EngineState(str, Enum):
     CONNECTING = "connecting"
     AUTH = "auth"
     ONLINE = "online"
+    RECONNECTING = "reconnecting"
     STOPPING = "stopping"
     ERROR = "error"
 
