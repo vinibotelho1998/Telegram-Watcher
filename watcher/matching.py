@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 
 _OR = re.compile(r"\s+(?:or|ou)\s+|\|", re.IGNORECASE)
 
 _SYNONYMS: dict[str, set[str]] = {
-    "cupom": {"cupons", "codigo", "vale", "promocode", "voucher"},
+    "cupom": {"cupons", "promocode", "voucher"},
     "frete": {"frete gratis", "envio gratis", "envio gratuito", "sem frete"},
     "desconto": {"descontos", "off", "promocao", "promo"},
     "mercado livre": {"mercadolivre", "meli", "mercado pago"},
-    "magalu": {"magazine luiza", "magazineluiza", "magazine"},
+    "magalu": {"magazine luiza", "magazineluiza"},
     "shopee": {"shp"},
-    "amazon": {"prime"},
-    "aliexpress": {"ali", "alibaba"},
+    "aliexpress": {"alibaba"},
     "americanas": {"submarino", "b2w"},
     "casas bahia": {"casasbahia", "ponto frio", "pontofrio"},
 }
@@ -26,8 +26,33 @@ def normalize(text: str) -> str:
     return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
 
 
+def _edge(char: str) -> str:
+    if char.isdigit():
+        return r"\d"
+    if char.isalpha():
+        return r"[^\W\d_]"
+    return ""
+
+
+@lru_cache(maxsize=2048)
+def _word_pattern(term: str) -> re.Pattern[str]:
+    body = r"\s+".join(re.escape(part) for part in term.split())
+    left = _edge(term[0])
+    right = _edge(term[-1])
+    before = f"(?<!{left})" if left else ""
+    after = f"(?!{right})" if right else ""
+    return re.compile(before + body + after)
+
+
+def contains_word(haystack: str, term: str) -> bool:
+    term = " ".join(term.split())
+    if not haystack or not term:
+        return False
+    return _word_pattern(term).search(haystack) is not None
+
+
 def expand_variations(word: str) -> set[str]:
-    word = normalize(word).strip()
+    word = " ".join(normalize(word).split())
     if not word:
         return set()
     out = {word}
@@ -38,13 +63,14 @@ def expand_variations(word: str) -> set[str]:
             out.add(word[:-2] + "oes")
         elif word.endswith("s"):
             out.add(word[:-1])
+            if len(word) > 4 and word.endswith(("res", "zes")):
+                out.add(word[:-2])
         else:
             out.add(word + "s")
+            if word.endswith(("r", "z")):
+                out.add(word + "es")
     for base, syns in _SYNONYMS.items():
-        if base in word or word in base:
-            out.add(base)
-            out.update(syns)
-        elif word in syns:
+        if contains_word(word, base) or contains_word(base, word) or word in syns:
             out.add(base)
             out.update(syns)
     return out
@@ -61,7 +87,7 @@ def matches_keyword(text: str, keyword: str) -> bool:
     if not text or not keyword:
         return False
     haystack = normalize(text)
-    return any(variation in haystack for variation in expand_variations(keyword))
+    return any(contains_word(haystack, variation) for variation in expand_variations(keyword))
 
 
 def _part_matches(text: str, part: str) -> bool:

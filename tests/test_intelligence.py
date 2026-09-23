@@ -129,3 +129,49 @@ def test_include_empty_passes():
 def test_exclude():
     assert matches_exclude("produto esgotado", ["esgotado"])
     assert not matches_exclude("disponivel agora", ["esgotado"])
+
+
+@pytest.mark.parametrize(
+    "text, word",
+    [
+        ("RTX 4060 com frete grátis", "ti"),
+        ("Promoção relâmpago de SSD", "pro"),
+        ("Fone com qualidade de estúdio", "aliexpress"),
+        ("Microsoft Office 365 vitalício", "desconto"),
+        ("Valeu galera, bom dia", "cupom"),
+        ("Seu código de rastreio chegou", "cupom"),
+        ("Primeira compra no app", "amazon"),
+        ("Placa-mãe ASUS Prime B550M", "amazon"),
+        ("SSD 12TB para servidor", "2tb"),
+    ],
+)
+def test_palavra_nao_casa_dentro_de_outra_nem_por_sinonimo_generico(text, word):
+    assert not matches_keyword(text, word)
+
+
+@pytest.mark.parametrize(
+    "text, word",
+    [
+        ("RTX 4060 Ti 8GB", "ti"),
+        ("placa rtx4060ti barata", "ti"),
+        ("placa rtx4060 barata", "4060"),
+        ("iPhone 15 Pro Max", "pro"),
+        ("30% OFF só hoje", "desconto"),
+        ("frete\n grátis acima de 79", "frete gratis"),
+        ("Galaxy S24+ 256GB", "s24+"),
+        ("SSD 2TB NVMe", "2tb"),
+        ("Monitores gamer 144hz", "monitor"),
+        ("Processadores AMD em oferta", "processador"),
+        ("Luzes de LED coloridas", "luz"),
+        ("Monitor gamer 144hz", "monitores"),
+    ],
+)
+def test_palavra_inteira_continua_casando(text, word):
+    assert matches_keyword(text, word)
+
+
+def test_palavra_curta_nao_puxa_sinonimos_de_loja():
+    from watcher.matching import expand_variations
+
+    assert expand_variations("on") == {"on"}
+    assert "aliexpress" not in expand_variations("li")
