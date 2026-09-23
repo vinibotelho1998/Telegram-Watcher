@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from qfluentwidgets import Theme, setTheme, setThemeColor
+from qfluentwidgets import Theme, isDarkTheme, setTheme, setThemeColor
 
 from watcher.models import EngineState, LogLevel
 
@@ -19,11 +19,20 @@ PALETTE = {
     "busy": "#F59E0B",
 }
 
+_LIGHT_TEXT = {
+    "success": "#15803D",
+    "danger": "#B91C1C",
+    "warning": "#B45309",
+    "capture": "#0369A1",
+    "muted": "#5F6670",
+}
+
 STATE_STYLE: dict[EngineState, tuple[str, str]] = {
     EngineState.OFFLINE: ("offline", "Offline"),
     EngineState.CONNECTING: ("busy", "Conectando"),
     EngineState.AUTH: ("busy", "Autenticando"),
     EngineState.ONLINE: ("online", "Online"),
+    EngineState.RECONNECTING: ("busy", "Reconectando"),
     EngineState.STOPPING: ("busy", "Parando"),
     EngineState.ERROR: ("danger", "Erro"),
 }
@@ -44,3 +53,21 @@ def apply_theme(dark: bool = True) -> None:
 
 def color(key: str) -> str:
     return PALETTE.get(key, key)
+
+
+def text_tone(key: str) -> str:
+    if not isDarkTheme() and key in _LIGHT_TEXT:
+        return _LIGHT_TEXT[key]
+    return PALETTE.get(key, key)
+
+
+def surface() -> str:
+    return "rgba(0, 0, 0, 0.28)" if isDarkTheme() else "rgba(0, 0, 0, 0.04)"
+
+
+def hairline() -> str:
+    return "rgba(255, 255, 255, 0.06)" if isDarkTheme() else "rgba(0, 0, 0, 0.10)"
+
+
+def faint() -> str:
+    return "rgba(255, 255, 255, 0.12)" if isDarkTheme() else "rgba(0, 0, 0, 0.12)"

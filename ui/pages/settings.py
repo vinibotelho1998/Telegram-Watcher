@@ -9,6 +9,7 @@ from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
     PrimaryPushButton,
+    PushButton,
     SimpleCardWidget,
     StrongBodyLabel,
     SwitchButton,
@@ -25,11 +26,6 @@ class SettingsPage(PageView):
         super().__init__("settingsPage", "Configurações", parent=parent)
         self._app = app
 
-        save_btn = PrimaryPushButton("Salvar")
-        save_btn.setIcon(FluentIcon.SAVE)
-        save_btn.clicked.connect(self._save)
-        self.add_header_widget(save_btn)
-
         area, body = make_vscroll()
         self.add_body(area, 1)
 
@@ -44,12 +40,37 @@ class SettingsPage(PageView):
         cred_layout.addLayout(self._field("API Hash", self.api_hash, "my.telegram.org"))
         cred_layout.addLayout(self._field("Bot Token", self.bot_token, "Opcional — criado no @BotFather"))
         cred_layout.addLayout(self._field("Telefone", self.phone, "Com código do país"))
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        save_btn = PrimaryPushButton("Salvar credenciais")
+        save_btn.setIcon(FluentIcon.SAVE)
+        save_btn.clicked.connect(self._save)
+        actions.addWidget(save_btn)
+        logout_btn = PushButton("Sair da conta do Telegram")
+        logout_btn.setIcon(FluentIcon.CLOSE)
+        logout_btn.clicked.connect(self._logout)
+        actions.addWidget(logout_btn)
+        actions.addStretch(1)
+        cred_layout.addLayout(actions)
+        cred_hint = CaptionLabel(
+            "Trocar o telefone ou o API ID desconecta a conta atual: no próximo início o Telegram "
+            "pede um código novo. Trocar o token do bot desconecta só o bot."
+        )
+        cred_hint.setWordWrap(True)
+        cred_hint.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
+        cred_layout.addWidget(cred_hint)
         body.addWidget(cred)
 
         behavior, behavior_layout = self._card("Comportamento")
-        self.sw_self = self._switch(behavior_layout, "Modo de teste", "Captura mensagens enviadas por você")
+        self.sw_self = self._switch(
+            behavior_layout,
+            "Capturar mensagens enviadas por mim",
+            "Para testar filtros mandando mensagem você mesmo. Elas são replicadas e podem disparar a Auto-Compra.",
+        )
         self.sw_auto = self._switch(behavior_layout, "Iniciar monitor automaticamente", "Liga o monitor ao abrir o app")
-        self.sw_startup = self._switch(behavior_layout, "Iniciar com o Windows", "Abre o app ao ligar o computador")
+        self.sw_startup = self._switch(
+            behavior_layout, "Iniciar com o Windows", "Abre o app minimizado na bandeja ao ligar o computador"
+        )
         self.sw_theme = self._switch(behavior_layout, "Tema escuro", "")
         body.addWidget(behavior)
 
@@ -65,6 +86,8 @@ class SettingsPage(PageView):
         self.load()
         self.sw_startup.checkedChanged.connect(app.set_windows_autostart)
         self.sw_theme.checkedChanged.connect(app.toggle_theme)
+        self.sw_self.checkedChanged.connect(self._save_behavior)
+        self.sw_auto.checkedChanged.connect(self._save_behavior)
 
     def _card(self, title: str) -> tuple[SimpleCardWidget, QVBoxLayout]:
         card = SimpleCardWidget()
@@ -92,11 +115,13 @@ class SettingsPage(PageView):
         texts.addWidget(BodyLabel(label))
         if description:
             desc = CaptionLabel(description)
+            desc.setWordWrap(True)
             desc.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
             texts.addWidget(desc)
-        row.addLayout(texts)
-        row.addStretch(1)
+        row.addLayout(texts, 1)
         switch = SwitchButton()
+        switch.setOnText("Ligado")
+        switch.setOffText("Desligado")
         row.addWidget(switch)
         parent_layout.addLayout(row)
         return switch
@@ -109,7 +134,7 @@ class SettingsPage(PageView):
     def load(self) -> None:
         self._load_config()
         self.sw_startup.setChecked(self._app.is_windows_autostart())
-        self.sw_theme.setChecked(True)
+        self.sw_theme.setChecked(getattr(self._app.config, "dark_theme", True))
 
     def _load_config(self) -> None:
         config = self._app.config
@@ -117,8 +142,16 @@ class SettingsPage(PageView):
         self.api_hash.setText(config.api_hash)
         self.bot_token.setText(config.bot_token)
         self.phone.setText(config.phone)
-        self.sw_self.setChecked(config.allow_self)
-        self.sw_auto.setChecked(config.auto_start)
+        for switch, value in ((self.sw_self, config.allow_self), (self.sw_auto, config.auto_start)):
+            switch.blockSignals(True)
+            switch.setChecked(value)
+            switch.blockSignals(False)
+
+    def _save_behavior(self, _checked: bool = False) -> None:
+        self._app.save_behavior(self.sw_self.isChecked(), self.sw_auto.isChecked())
+
+    def _logout(self) -> None:
+        self._app.logout_telegram()
 
     def _save(self) -> None:
         self._app.save_settings(

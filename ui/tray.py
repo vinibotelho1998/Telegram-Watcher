@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 from watcher import APP_NAME
 from watcher.models import EngineState
 
+from .theme import STATE_STYLE
+
 
 class SystemTray(QSystemTrayIcon):
     def __init__(
@@ -40,14 +42,15 @@ class SystemTray(QSystemTrayIcon):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._on_open()
 
-    def notify(self, title: str, message: str) -> None:
+    def notify(self, title: str, message: str, warning: bool = True) -> None:
+        icon = QSystemTrayIcon.MessageIcon.Warning if warning else QSystemTrayIcon.MessageIcon.Information
         try:
-            self.showMessage(title, message, QSystemTrayIcon.MessageIcon.Warning, 8000)
+            self.showMessage(title, message, icon, 8000)
         except Exception:
             pass
 
     def set_state(self, state: EngineState) -> None:
-        running = state in (EngineState.ONLINE, EngineState.CONNECTING, EngineState.AUTH)
+        running = state in (EngineState.ONLINE, EngineState.CONNECTING, EngineState.AUTH, EngineState.RECONNECTING)
         self._toggle_action.setText("Parar monitor" if running else "Iniciar monitor")
-        label = "Online" if state == EngineState.ONLINE else "Offline"
+        _key, label = STATE_STYLE.get(state, ("offline", "Offline"))
         self.setToolTip(f"{APP_NAME} — {label}")

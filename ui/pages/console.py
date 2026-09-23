@@ -4,12 +4,12 @@ import html
 from time import strftime
 
 from PyQt6.QtWidgets import QTextEdit, QWidget
-from qfluentwidgets import ComboBox, FluentIcon, TransparentPushButton
+from qfluentwidgets import ComboBox, FluentIcon, TransparentPushButton, qconfig
 
 from watcher.models import LogLevel
 
 from ..common import PageView
-from ..theme import LOG_COLOR, PALETTE
+from ..theme import LOG_COLOR, hairline, surface, text_tone
 
 _FILTERS: list[tuple[str, LogLevel | None]] = [
     ("Tudo", None),
@@ -21,15 +21,17 @@ _FILTERS: list[tuple[str, LogLevel | None]] = [
 
 _MAX_LINES = 800
 
-_STYLE = """
-QTextEdit#consoleView {
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+
+def _style() -> str:
+    return f"""
+QTextEdit#consoleView {{
+    background: {surface()};
+    border: 1px solid {hairline()};
     border-radius: 10px;
     padding: 12px;
     font-family: 'Cascadia Mono', Consolas, monospace;
     font-size: 12px;
-}
+}}
 """
 
 
@@ -56,11 +58,19 @@ class ConsolePage(PageView):
         self.view.setReadOnly(True)
         self.view.document().setMaximumBlockCount(_MAX_LINES)
         self.view.setObjectName("consoleView")
-        self.view.setStyleSheet(_STYLE)
+        self.view.setStyleSheet(_style())
         self.add_body(self.view, 1)
+        qconfig.themeChanged.connect(self._on_theme)
+
+    def _on_theme(self, *_args) -> None:
+        self.view.setStyleSheet(_style())
+        self._render()
 
     def _on_filter(self, index: int) -> None:
         self._active = _FILTERS[index][1]
+        self._render()
+
+    def _render(self) -> None:
         self.view.clear()
         for level, timestamp, message in self._buffer:
             if self._active is None or self._active == level:
@@ -76,9 +86,9 @@ class ConsolePage(PageView):
 
     @staticmethod
     def _line(level: LogLevel, timestamp: str, message: str) -> str:
-        tone = PALETTE[LOG_COLOR.get(level, "muted")]
+        tone = text_tone(LOG_COLOR.get(level, "muted"))
         return (
-            f'<span style="color:{PALETTE["muted"]}">{timestamp}</span>&nbsp;&nbsp;'
+            f'<span style="color:{text_tone("muted")}">{timestamp}</span>&nbsp;&nbsp;'
             f'<span style="color:{tone}">{html.escape(message)}</span>'
         )
 

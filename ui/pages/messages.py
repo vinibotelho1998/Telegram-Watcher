@@ -22,8 +22,6 @@ from qfluentwidgets import (
     FluentIcon,
     SearchLineEdit,
     SimpleCardWidget,
-    StrongBodyLabel,
-    SubtitleLabel,
     TogglePushButton,
     TransparentPushButton,
 )
@@ -33,8 +31,39 @@ from watcher.filtering import matching_filters
 from watcher.models import ChannelKind
 from watcher.reader import ChatMessage, ChatSummary, preview_text
 
-from ..common import PageView, clear_layout, make_vscroll, plain
-from ..theme import ACCENT, PALETTE, TEXT
+from ..chips import FlowLayout
+from ..common import (
+    ElidedCaption,
+    ElidedStrong,
+    ElidedSubtitle,
+    PageView,
+    clear_layout,
+    format_int,
+    make_vscroll,
+    plain,
+)
+from ..theme import ACCENT, PALETTE, TEXT, text_tone
+
+OFFLINE_TEXT = "Monitor desligado. Inicie o monitor para ler esta conversa."
+
+_PILL_TONES = {
+    "filter": ("rgba(59, 130, 246, 0.18)", "rgba(59, 130, 246, 0.45)", "info"),
+    "detect": ("rgba(56, 189, 248, 0.14)", "rgba(56, 189, 248, 0.40)", "capture"),
+    "warning": ("rgba(245, 158, 11, 0.14)", "rgba(245, 158, 11, 0.45)", "warning"),
+    "muted": ("rgba(128, 138, 152, 0.12)", "rgba(128, 138, 152, 0.35)", "muted"),
+}
+
+
+def _pill(text: str, tone: str) -> QLabel:
+    fundo, borda, chave = _PILL_TONES.get(tone, _PILL_TONES["muted"])
+    cor = text_tone(chave)
+    pill = plain(CaptionLabel(text))
+    pill.setObjectName("markPill")
+    pill.setStyleSheet(
+        f"QLabel#markPill {{ background: {fundo}; border: 1px solid {borda}; border-radius: 9px;"
+        f" padding: 1px 8px; color: {cor}; }}"
+    )
+    return pill
 
 _PAGE_SIZE = 40
 _CHAT_LIMIT = 200
@@ -150,11 +179,6 @@ def _list_stamp(moment: datetime | None) -> str:
     return moment.strftime("%m/%Y")
 
 
-def _shorten(text: str, limit: int) -> str:
-    text = " ".join((text or "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
 def _initials(name: str) -> str:
     words = [w for w in (name or "").split() if w]
     if not words:
@@ -261,18 +285,16 @@ class _ChatRow(CardWidget):
 
         middle = QVBoxLayout()
         middle.setSpacing(1)
-        top = QHBoxLayout()
-        top.setSpacing(6)
-        self._name = plain(StrongBodyLabel(_shorten(summary.name, 26)))
-        top.addWidget(self._name, 1)
-        if role:
-            tag = CaptionLabel(role)
-            tag.setTextColor(QColor(ACCENT), QColor(ACCENT))
-            top.addWidget(tag)
-        middle.addLayout(top)
-        self._preview = plain(CaptionLabel(_shorten(summary.preview, 38) or _KIND_LABEL.get(summary.kind, "")))
+        self._name = ElidedStrong(summary.name)
+        middle.addWidget(self._name)
+        bottom = QHBoxLayout()
+        bottom.setSpacing(6)
+        self._preview = ElidedCaption(summary.preview or _KIND_LABEL.get(summary.kind, ""))
         self._preview.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
-        middle.addWidget(self._preview)
+        bottom.addWidget(self._preview, 1)
+        if role:
+            bottom.addWidget(_pill(role, "filter"))
+        middle.addLayout(bottom)
         layout.addLayout(middle, 1)
 
         right = QVBoxLayout()
@@ -281,18 +303,23 @@ class _ChatRow(CardWidget):
         self._stamp = CaptionLabel(_list_stamp(summary.date))
         self._stamp.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         self._stamp.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._stamp.setMinimumWidth(self._stamp.fontMetrics().horizontalAdvance("00/00") + 6)
         right.addWidget(self._stamp)
         self._badge = CaptionLabel("")
-        self._badge.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self._badge.setTextColor(QColor(ACCENT), QColor(ACCENT))
-        right.addWidget(self._badge)
+        self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._badge.setObjectName("unreadBadge")
+        self._badge.setStyleSheet(
+            f"QLabel#unreadBadge {{ background: {ACCENT}; color: white; border-radius: 9px; padding: 0px 6px; }}"
+        )
+        right.addWidget(self._badge, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(right)
 
         self.set_unread(summary.unread)
         self.clicked.connect(lambda: self.opened.emit(self.chat_id))
 
     def set_unread(self, count: int) -> None:
-        self._badge.setText(f"● {count}" if count > 0 else "")
+        self._badge.setText(("99+" if count > 99 else str(count)) if count > 0 else "")
+        self._badge.setVisible(count > 0)
 
     def set_selected(self, selected: bool) -> None:
         self._marker.setVisible(selected)
@@ -302,7 +329,7 @@ class _ChatRow(CardWidget):
             self._name.setTextColor(QColor(TEXT[0]), QColor(TEXT[1]))
 
     def touch(self, message: ChatMessage) -> None:
-        self._preview.setText(_shorten(preview_text(message), 38))
+        self._preview.setText(preview_text(message))
         self._stamp.setText(_list_stamp(message.date))
 
 
@@ -324,7 +351,7 @@ class _Bubble(QWidget):
         self,
         message: ChatMessage,
         show_sender: bool,
-        marks: list[str],
+        marks: list[tuple[str, str]],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -338,7 +365,8 @@ class _Bubble(QWidget):
         frame = QFrame()
         frame.setObjectName("bubble")
         tint = "rgba(59, 130, 246, 0.16)" if message.outgoing else "rgba(128, 138, 152, 0.14)"
-        edge = f"border-left: 3px solid {ACCENT};" if marks else ""
+        replica = any(tone in ("filter", "warning") for _text, tone in marks)
+        edge = f"border-left: 3px solid {ACCENT};" if replica else ""
         frame.setStyleSheet(
             "QFrame#bubble {"
             f" background: {tint};"
@@ -359,9 +387,10 @@ class _Bubble(QWidget):
             body.addWidget(sender)
 
         if marks:
-            chips = CaptionLabel("  ·  ".join(marks))
-            chips.setTextColor(QColor(ACCENT), QColor(ACCENT))
-            chips.setWordWrap(True)
+            chips = QWidget()
+            flow = FlowLayout(chips, spacing=4)
+            for text, tone in marks:
+                flow.addWidget(_pill(text, tone))
             body.addWidget(chips)
 
         self.thumb = QLabel()
@@ -400,11 +429,11 @@ class _Bubble(QWidget):
             outer.addStretch(1)
 
     @staticmethod
-    def _ideal_width(message: ChatMessage, marks: list[str]) -> int:
+    def _ideal_width(message: ChatMessage, marks: list[tuple[str, str]]) -> int:
         metrics = QFontMetrics(QFont())
         lines = (message.text or "").splitlines()
         lines.append(message.media_label)
-        lines.append("  ·  ".join(marks))
+        lines.append("    ".join(text for text, _tone in marks))
         widest = max((metrics.horizontalAdvance(line) for line in lines if line), default=0)
         return max(_BUBBLE_MIN, min(_BUBBLE_MAX, widest + 34))
 
@@ -412,7 +441,7 @@ class _Bubble(QWidget):
     def _footer(message: ChatMessage) -> str:
         parts = [_clock(message.date)]
         if message.views:
-            parts.append(f"{message.views} visualizações")
+            parts.append(f"{format_int(message.views)} visualizações")
         if message.edited:
             parts.append("editada")
         return "  ·  ".join(p for p in parts if p)
@@ -444,6 +473,8 @@ class MessagesPage(PageView):
         self._stale = False
         self._exhausted = False
         self._searching = False
+        self._loading_chats = False
+        self._opened_offline = False
 
         self.scope = ComboBox()
         for label, _ in _SCOPES:
@@ -461,7 +492,9 @@ class MessagesPage(PageView):
         split.setSpacing(14)
 
         sidebar = SimpleCardWidget()
-        sidebar.setFixedWidth(330)
+        sidebar.setMinimumWidth(240)
+        sidebar.setMaximumWidth(330)
+        sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         side_layout = QVBoxLayout(sidebar)
         side_layout.setContentsMargins(12, 12, 8, 12)
         side_layout.setSpacing(10)
@@ -473,7 +506,7 @@ class MessagesPage(PageView):
         chats_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._chat_list.setSpacing(4)
         side_layout.addWidget(chats_area, 1)
-        split.addWidget(sidebar)
+        split.addWidget(sidebar, 1)
 
         thread = SimpleCardWidget()
         thread_layout = QVBoxLayout(thread)
@@ -486,7 +519,7 @@ class MessagesPage(PageView):
         self._scrollbar = self._thread_area.verticalScrollBar()
         self._scrollbar.valueChanged.connect(self._on_scroll)
         thread_layout.addWidget(self._thread_area, 1)
-        split.addWidget(thread, 1)
+        split.addWidget(thread, 2)
 
         self.add_body_layout(split, 1)
         self._reset_thread()
@@ -505,42 +538,58 @@ class MessagesPage(PageView):
 
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        self.thread_title = plain(SubtitleLabel("Conversas"))
-        self.thread_subtitle = plain(CaptionLabel("Somente leitura, nada é enviado por aqui"))
+        self.thread_title = ElidedSubtitle("Conversas")
+        self.thread_subtitle = ElidedCaption("Somente leitura, nada é enviado por aqui")
         self.thread_subtitle.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         titles.addWidget(self.thread_title)
         titles.addWidget(self.thread_subtitle)
-        layout.addLayout(titles, 1)
+        layout.addLayout(titles, 2)
 
         self.thread_search = SearchLineEdit()
         self.thread_search.setPlaceholderText("Buscar mensagem")
-        self.thread_search.setFixedWidth(190)
+        self.thread_search.setMinimumWidth(120)
+        self.thread_search.setMaximumWidth(220)
         self.thread_search.setEnabled(False)
         self.thread_search.searchSignal.connect(self._run_search)
         self.thread_search.clearSignal.connect(self._exit_search)
         self.thread_search.textChanged.connect(self._on_search_text)
-        layout.addWidget(self.thread_search)
+        layout.addWidget(self.thread_search, 1)
 
         self.as_source = TogglePushButton("Origem")
-        self.as_source.setFixedWidth(96)
-        self.as_source.setToolTip("Monitorar esta conversa")
         self.as_source.setEnabled(False)
         self.as_source.clicked.connect(lambda on: self._set_role("source", on))
         self.as_destination = TogglePushButton("Destino")
-        self.as_destination.setFixedWidth(96)
-        self.as_destination.setToolTip("Replicar mensagens para esta conversa")
         self.as_destination.setEnabled(False)
         self.as_destination.clicked.connect(lambda on: self._set_role("destination", on))
         layout.addWidget(self.as_source)
         layout.addWidget(self.as_destination)
+        self._paint_roles()
         return header
+
+    def _paint_roles(self) -> None:
+        textos = {
+            self.as_source: (
+                "Esta conversa é origem: o monitor lê o que chega nela. Clique para parar de monitorar.",
+                "Clique para monitorar esta conversa e replicar o que chega nela.",
+            ),
+            self.as_destination: (
+                "Esta conversa é destino: recebe as mensagens replicadas. Clique para parar de enviar para ela.",
+                "Clique para replicar mensagens para esta conversa.",
+            ),
+        }
+        for button, (ligado, desligado) in textos.items():
+            marcado = button.isChecked()
+            button.setIcon(FluentIcon.ACCEPT if marcado else FluentIcon.ADD)
+            button.setToolTip(ligado if marcado else desligado)
 
     def _set_role(self, role: str, enabled: bool) -> None:
         if self._chat_id is None:
             return
         self._app.set_channel_role(self._chat_id, self._chat_name(self._chat_id), role, enabled)
         self._app.channels_page.refresh()
+        self._paint_roles()
         self._render_chats()
+        self.refresh_marks()
 
     def _chat_name(self, chat_id: int) -> str:
         for summary in self._summaries:
@@ -561,6 +610,9 @@ class MessagesPage(PageView):
             self._app.toast("Inicie o monitor para carregar as conversas", "warning")
             return
         self.reload_btn.setEnabled(False)
+        self._loading_chats = True
+        if not self._summaries:
+            self._render_chats()
         self._app.schedule(self._fetch_chats())
 
     async def _fetch_chats(self) -> None:
@@ -571,8 +623,11 @@ class MessagesPage(PageView):
             return
         finally:
             self.reload_btn.setEnabled(True)
+            self._loading_chats = False
         self._render_chats()
         self._app.schedule(self._fetch_avatars())
+        if self._opened_offline and self._chat_id is not None:
+            self.open_chat(self._chat_id)
 
     async def _fetch_avatars(self) -> None:
         for summary in self._summaries[:_AVATAR_PRELOAD]:
@@ -619,11 +674,13 @@ class MessagesPage(PageView):
             self._chat_list.addWidget(row)
             self._rows[summary.id] = row
         if not chats:
-            hint = CaptionLabel(
-                "Nenhuma conversa carregada. Inicie o monitor e clique em Atualizar."
-                if not self._summaries
-                else "Nenhuma conversa com esse critério."
-            )
+            if self._summaries:
+                texto = "Nenhuma conversa com esse critério."
+            elif self._loading_chats:
+                texto = "Carregando conversas..."
+            else:
+                texto = "Nenhuma conversa carregada. Inicie o monitor e clique em Atualizar."
+            hint = CaptionLabel(texto)
             hint.setWordWrap(True)
             hint.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
             self._chat_list.addWidget(hint)
@@ -639,23 +696,32 @@ class MessagesPage(PageView):
         self._reset_thread()
 
         name = self._chat_name(chat_id)
-        self.thread_title.setText(_shorten(name, 30))
+        self.thread_title.setText(name)
         self.thread_avatar.setVisible(True)
         self.thread_avatar.set_identity(chat_id, name)
         cached = self._avatars.get(chat_id)
         if cached:
             self.thread_avatar.set_photo(cached)
-        self.thread_search.setEnabled(True)
         self.thread_search.clear()
         self.as_source.setEnabled(True)
         self.as_destination.setEnabled(True)
         self.as_source.setChecked(chat_id in self._app.config.source_ids)
         self.as_destination.setChecked(chat_id in self._app.config.destination_ids)
+        self._paint_roles()
+        for summary in self._summaries:
+            if summary.id == chat_id:
+                summary.unread = 0
         for cid, row in self._rows.items():
             row.set_selected(cid == chat_id)
             if cid == chat_id:
                 row.set_unread(0)
         self._describe(chat_id)
+        available = self._app.engine.reader.available
+        self._opened_offline = not available
+        self.thread_search.setEnabled(available)
+        if not available:
+            self._show_placeholder(OFFLINE_TEXT)
+            return
         self._show_placeholder("Carregando mensagens...")
         self._app.schedule(self._fetch_history(initial=True))
         self._app.schedule(self._fetch_avatar(chat_id))
@@ -676,9 +742,9 @@ class MessagesPage(PageView):
             if summary.username:
                 parts.append(f"@{summary.username}")
             if summary.participants:
-                parts.append(f"{summary.participants} membros")
+                parts.append(f"{format_int(summary.participants)} membros")
         parts.append(f"ID {chat_id}")
-        self.thread_subtitle.setText(_shorten("  ·  ".join(parts), 52))
+        self.thread_subtitle.setText("  ·  ".join(parts))
 
     async def _fetch_history(self, initial: bool = False) -> None:
         chat_id = self._chat_id
@@ -711,6 +777,11 @@ class MessagesPage(PageView):
             self._reset_thread()
             self._exhausted = False
         if not messages:
+            if not self._app.engine.reader.available:
+                self._opened_offline = True
+                if initial:
+                    self._show_placeholder(OFFLINE_TEXT)
+                return
             self._exhausted = True
             if initial:
                 self._show_placeholder("Nenhuma mensagem nesta conversa.")
@@ -758,21 +829,33 @@ class MessagesPage(PageView):
         if path is not None and bubble is not None and self._chat_id == chat_id:
             bubble.set_thumbnail(str(path))
 
-    def _marks(self, message: ChatMessage) -> list[str]:
+    def _marks(self, message: ChatMessage) -> list[tuple[str, str]]:
         if not message.text:
             return []
-        marks: list[str] = []
-        for flt in matching_filters(self._app.filters, message.chat_id, message.text):
-            marks.append(f"Filtro {flt.name}")
+        config = self._app.config
+        filters = self._app.filters
+        is_source = message.chat_id in config.source_ids
+        marcados = [d for d in config.destination_ids if d != message.chat_id]
+        marks: list[tuple[str, str]] = []
+        if is_source and not any(f.enabled for f in filters):
+            if marcados:
+                marks.append(("Replicaria: nenhum filtro ativo", "warning"))
+        else:
+            for flt in matching_filters(filters, message.chat_id, message.text):
+                if not is_source:
+                    marks.append((f"Casaria no filtro {flt.name}, mas o canal não é origem", "muted"))
+                elif not [d for d in (flt.destination_ids or marcados) if d in marcados]:
+                    marks.append((f"Filtro {flt.name}, sem destino", "muted"))
+                else:
+                    marks.append((f"Filtro {flt.name}", "filter"))
         detection = detect(message.text)
         if detection.has_offer:
-            label = detection.label
+            marks.append((detection.label, "detect"))
             if detection.store_label:
-                label = f"{label} · {detection.store_label}"
+                marks.append((detection.store_label, "detect"))
             coupon = detection.best_coupon
             if coupon is not None and coupon.confidence > 0.5:
-                label = f"{label} · {coupon.code}"
-            marks.append(label)
+                marks.append((coupon.code, "detect"))
         return marks
 
     def _append(self, message: ChatMessage) -> None:
@@ -831,6 +914,9 @@ class MessagesPage(PageView):
         if not query.strip():
             self._exit_search()
             return
+        if not self._app.engine.reader.available:
+            self._show_placeholder(OFFLINE_TEXT)
+            return
         self._searching = True
         self._app.schedule(self._fetch_search(query))
 
@@ -875,23 +961,24 @@ class MessagesPage(PageView):
             self.refresh_marks()
 
     def refresh_marks(self) -> None:
-        if self._chat_id is None or self._searching:
+        if self._chat_id is None or self._searching or not self._app.engine.reader.available:
             return
         self._oldest_id = None
         self._exhausted = False
         self._app.schedule(self._fetch_history(initial=True))
 
     def on_incoming(self, chat_id: int, message: ChatMessage) -> None:
+        summary = next((s for s in self._summaries if s.id == chat_id), None)
+        if summary is not None:
+            summary.preview = preview_text(message)
+            summary.date = message.date
+            if chat_id != self._chat_id and not message.outgoing:
+                summary.unread += 1
         row = self._rows.get(chat_id)
         if row is not None:
             row.touch(message)
-            if chat_id != self._chat_id:
-                summary = next((s for s in self._summaries if s.id == chat_id), None)
-                if summary is not None:
-                    summary.unread += 1
-                    summary.preview = preview_text(message)
-                    summary.date = message.date
-                    row.set_unread(summary.unread)
+            if summary is not None:
+                row.set_unread(summary.unread)
         if chat_id != self._chat_id or self._searching:
             return
         if not self.isVisible():

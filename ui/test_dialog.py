@@ -15,6 +15,8 @@ from watcher.autobuy import registry
 
 from .theme import PALETTE
 
+_CART = " Atenção: o robô remove os outros itens do seu carrinho nessa loja."
+
 MODES = [
     (
         "Só consultar preço",
@@ -23,15 +25,27 @@ MODES = [
     ),
     (
         "Simulação até a revisão",
-        "Percorre o checkout inteiro, seleciona PIX e para antes de finalizar. Nenhum pedido é feito.",
+        "Percorre o checkout inteiro, seleciona PIX e para antes de finalizar. Nenhum pedido é feito." + _CART,
         "muted",
     ),
     (
         "Ir até gerar o PIX",
-        "COMPRA DE VERDADE: finaliza o pedido e traz o código PIX. Se você não pagar, o pedido expira e cancela sozinho.",
+        "COMPRA DE VERDADE: finaliza o pedido e traz o código PIX. Se você não pagar, o pedido expira e cancela sozinho."
+        + _CART,
         "warning",
     ),
 ]
+
+BUY_MODE = 2
+
+_BUTTONS = ("Consultar preço", "Simular checkout", "Comprar e gerar PIX")
+
+_INTROS = (
+    "Abre a página do produto que você escolher e mostra o preço à vista e o estoque, sem comprar nada.",
+    "Roda o fluxo de compra com o produto que você escolher, do mesmo jeito que numa promoção capturada, "
+    "e para antes de finalizar.",
+    "Roda o fluxo de compra de verdade com o produto que você escolher e finaliza o pedido.",
+)
 
 
 class TestDialog(MessageBoxBase):
@@ -49,10 +63,8 @@ class TestDialog(MessageBoxBase):
 
         self.viewLayout.setSpacing(10)
         self.viewLayout.addWidget(SubtitleLabel(f"Testar o fluxo na {label}"))
-        self.viewLayout.addWidget(self._muted(
-            "Roda o fluxo de compra de verdade com o produto que você escolher, do mesmo jeito "
-            "que rodaria numa promoção capturada."
-        ))
+        self.intro = self._muted("")
+        self.viewLayout.addWidget(self.intro)
 
         self.viewLayout.addWidget(StrongBodyLabel("Link do produto"))
         self.url_input = LineEdit()
@@ -88,7 +100,6 @@ class TestDialog(MessageBoxBase):
         self.mode_hint.setWordWrap(True)
         self.viewLayout.addWidget(self.mode_hint)
 
-        self.yesButton.setText("Executar")
         self.cancelButton.setText("Cancelar")
         self.widget.setMinimumWidth(560)
         self._describe()
@@ -111,10 +122,13 @@ class TestDialog(MessageBoxBase):
         return label
 
     def _describe(self) -> None:
-        _name, desc, kind = MODES[self.mode_combo.currentIndex()]
+        index = self.mode_combo.currentIndex()
+        _name, desc, kind = MODES[index]
         self.mode_hint.setText(desc)
         weight = "600" if kind == "warning" else "400"
         self.mode_hint.setStyleSheet(f"color: {PALETTE[kind]}; font-weight: {weight};")
+        self.intro.setText(_INTROS[index])
+        self.yesButton.setText(_BUTTONS[index])
 
     def _validate(self) -> None:
         url = self.url_input.text().strip()

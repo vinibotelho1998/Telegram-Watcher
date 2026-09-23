@@ -10,17 +10,22 @@ from qfluentwidgets import (
     FluentIcon,
     PrimaryPushButton,
     SearchLineEdit,
-    StrongBodyLabel,
     SubtitleLabel,
     TransparentToolButton,
 )
 
-from watcher.models import Channel
+from watcher.models import Channel, ChannelKind
 
-from ..common import PageView, clear_layout, make_vscroll, plain
+from ..common import ElidedStrong, PageView, clear_layout, format_int, make_vscroll
 from ..theme import PALETTE
 
 _RENDER_LIMIT = 200
+
+KIND_LABEL = {
+    ChannelKind.CHANNEL: "Canal",
+    ChannelKind.GROUP: "Grupo",
+    ChannelKind.USER: "Conversa",
+}
 
 
 class _ChannelRow(CardWidget):
@@ -32,8 +37,8 @@ class _ChannelRow(CardWidget):
 
         info = QVBoxLayout()
         info.setSpacing(1)
-        info.addWidget(plain(StrongBodyLabel(channel.name or "Sem nome")))
-        meta = CaptionLabel(f"{channel.kind.value}  ·  {channel.id}")
+        info.addWidget(ElidedStrong(channel.name or "Sem nome"))
+        meta = CaptionLabel(f"{KIND_LABEL.get(channel.kind, 'Canal')}  ·  ID {channel.id}")
         meta.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         info.addWidget(meta)
         layout.addLayout(info, 1)
@@ -79,9 +84,11 @@ class ChannelsPage(PageView):
     def _display_channels(self) -> list[Channel]:
         seen: set[int] = set()
         merged: list[Channel] = []
+        cache = {channel.id: channel for channel in self._app.channels}
         for cid in (*self._app.config.source_ids, *self._app.config.destination_ids):
             if cid not in seen:
-                merged.append(Channel(id=cid, name=self._app.config.channel_name(cid)))
+                kind = cache[cid].kind if cid in cache else ChannelKind.CHANNEL
+                merged.append(Channel(id=cid, name=self._app.config.channel_name(cid), kind=kind))
                 seen.add(cid)
         for channel in self._app.channels:
             if channel.id not in seen:
@@ -92,23 +99,33 @@ class ChannelsPage(PageView):
     def refresh(self) -> None:
         clear_layout(self._list)
         query = self.search.text().strip().lower()
-        channels = self._display_channels()
-        shown = 0
-        for channel in channels:
-            if query and query not in channel.name.lower() and query not in str(channel.id):
-                continue
+        matching = [
+            channel
+            for channel in self._display_channels()
+            if not query or query in channel.name.lower() or query in str(channel.id)
+        ]
+        for channel in matching[:_RENDER_LIMIT]:
             self._list.addWidget(_ChannelRow(channel, self._app))
-            shown += 1
-            if shown >= _RENDER_LIMIT:
-                break
+        if len(matching) > _RENDER_LIMIT:
+            more = CaptionLabel(
+                f"Mostrando {_RENDER_LIMIT} de {format_int(len(matching))}. Use a busca para achar os outros."
+            )
+            more.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            more.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
+            self._list.addWidget(more)
 
-        if shown == 0:
+        if not matching:
             empty = QWidget()
             layout = QVBoxLayout(empty)
             layout.setContentsMargins(0, 80, 0, 0)
-            title = SubtitleLabel("Nenhum canal encontrado")
+            if query:
+                title = SubtitleLabel("Nenhum canal com esse nome")
+                texto = "Confira a busca, ou clique em Sincronizar se o canal for novo."
+            else:
+                title = SubtitleLabel("Nenhum canal encontrado")
+                texto = "Inicie o monitor para listar seus canais. Depois é só clicar em Sincronizar."
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            hint = CaptionLabel("Conecte o monitor e clique em Sincronizar para listar seus canais.")
+            hint = CaptionLabel(texto)
             hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
             hint.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
             layout.addWidget(title)

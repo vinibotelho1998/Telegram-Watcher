@@ -118,6 +118,8 @@ class WordChips(QWidget):
         self._input.setPlaceholderText(placeholder)
         self._input.setClearButtonEnabled(True)
         self._input.returnPressed.connect(self._commit)
+        self._input.editingFinished.connect(self._commit)
+        self._input.textChanged.connect(self._on_typing)
         entry.addWidget(self._input, 1)
         add_btn = TransparentToolButton(FluentIcon.ADD)
         add_btn.setToolTip("Adicionar palavra")
@@ -135,7 +137,21 @@ class WordChips(QWidget):
         layout.addWidget(self._empty)
 
     def words(self) -> list[str]:
-        return list(self._words)
+        return self._words + self._pending()
+
+    def _on_typing(self, _text: str) -> None:
+        self._empty.setVisible(not self._words and not self._pending())
+        self.changed.emit()
+
+    def _pending(self) -> list[str]:
+        out: list[str] = []
+        known = {w.lower() for w in self._words}
+        for chunk in self._input.text().split(","):
+            value = " ".join(chunk.split()).strip()
+            if value and value.lower() not in known:
+                known.add(value.lower())
+                out.append(value)
+        return out
 
     def set_words(self, words: list[str]) -> None:
         self._words = []
@@ -146,18 +162,15 @@ class WordChips(QWidget):
         self._rebuild()
 
     def _commit(self) -> None:
-        raw = self._input.text()
-        added = False
-        for chunk in raw.split(","):
-            value = " ".join(chunk.split()).strip()
-            if not value or value.lower() in {w.lower() for w in self._words}:
-                continue
-            self._words.append(value)
-            added = True
+        pending = self._pending()
+        if not self._input.text():
+            return
+        self._words.extend(pending)
+        self._input.blockSignals(True)
         self._input.clear()
-        if added:
-            self._rebuild()
-            self.changed.emit()
+        self._input.blockSignals(False)
+        self._rebuild()
+        self.changed.emit()
 
     def _remove(self, word: str) -> None:
         self._words = [w for w in self._words if w != word]

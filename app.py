@@ -11,8 +11,9 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication
 
 from watcher import APP_ID, APP_NAME, paths
+from watcher.config import AppConfig
 from ui.theme import apply_theme
-from ui.window import AppWindow
+from ui.window import TRAY_FLAG, AppWindow
 
 
 def _setup_logging() -> None:
@@ -89,7 +90,7 @@ def main() -> int:
     if _another_instance_running():
         return 0
 
-    apply_theme(dark=True)
+    apply_theme(dark=AppConfig.load().dark_theme)
 
     loop = qasync.QEventLoop(app)
     loop.set_exception_handler(_log_async_error)
@@ -97,7 +98,8 @@ def main() -> int:
 
     window = AppWindow(loop)
     window.instance_server = _listen_for_instances(window)
-    window.show()
+    if TRAY_FLAG not in sys.argv or not window.can_start_hidden():
+        window.show()
 
     with loop:
         loop.run_forever()

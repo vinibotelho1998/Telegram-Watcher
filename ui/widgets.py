@@ -3,7 +3,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel
+from qfluentwidgets import CaptionLabel, SimpleCardWidget, StrongBodyLabel, isDarkTheme
 
 from watcher.models import EngineState
 from .theme import PALETTE, STATE_STYLE, color
@@ -81,6 +81,7 @@ class ActivityChart(QWidget):
 
         top = QColor(PALETTE["info"])
         bottom = QColor(PALETTE["capture"])
+        empty = QColor(255, 255, 255, 16) if isDarkTheme() else QColor(0, 0, 0, 22)
 
         for hour, value in enumerate(self._data):
             x = pad_x + slot * hour + (slot - bar_w) / 2
@@ -89,14 +90,15 @@ class ActivityChart(QWidget):
             rect = QRectF(x, y, bar_w, bar_h)
 
             path = QPainterPath()
-            path.addRoundedRect(rect, bar_w / 2, bar_w / 2)
+            radius = min(bar_w / 2, bar_h / 2)
+            path.addRoundedRect(rect, radius, radius)
             if value:
                 gradient = QLinearGradient(0, y, 0, y + bar_h)
                 gradient.setColorAt(0, top)
                 gradient.setColorAt(1, bottom)
                 painter.fillPath(path, gradient)
             else:
-                painter.fillPath(path, QColor(255, 255, 255, 16))
+                painter.fillPath(path, empty)
 
             if hour % 6 == 0:
                 painter.setPen(QColor(PALETTE["muted"]))

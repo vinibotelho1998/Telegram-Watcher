@@ -12,13 +12,14 @@ from qfluentwidgets import (
     FluentWindow,
     InfoBar,
     InfoBarPosition,
+    MessageBox,
     NavigationItemPosition,
 )
 
 from watcher import APP_ID, APP_NAME, VERSION, paths
 from watcher.autobuy.manager import AutobuyManager
-from watcher.autobuy.models import BuyResult, BuyStatus, WatchItem
-from watcher.autobuy.notify import build_message, send_pix_notification
+from watcher.autobuy.models import SUCCESS_STATUSES, BuyResult, BuyStatus, WatchItem
+from watcher.autobuy.notify import build_message, headline, send_pix_notification
 from watcher.config import AppConfig
 from watcher.engine import MonitorEngine
 from watcher.models import EngineState, Filter, LogLevel
@@ -39,6 +40,11 @@ from .theme import apply_theme
 from .tray import SystemTray
 
 _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+TRAY_FLAG = "--bandeja"
+
+
+def _digits(value: str) -> str:
+    return "".join(c for c in str(value or "") if c.isdigit())
 
 
 class AppWindow(FluentWindow):
@@ -80,11 +86,14 @@ class AppWindow(FluentWindow):
 
         if self.config.is_ready:
             if self.config.auto_start:
-                QTimer.singleShot(900, self.toggle_engine)
+                QTimer.singleShot(900, self.auto_start)
         else:
             QTimer.singleShot(500, self.open_setup_wizard)
 
         QTimer.singleShot(1500, self.autobuy_page.check_all_stores)
+
+    def can_start_hidden(self) -> bool:
+        return self._tray is not None and self.config.is_ready
 
     def _load_icon(self) -> QIcon:
         icon_path = paths.assets_path("final_icon.ico")
@@ -93,6 +102,7 @@ class AppWindow(FluentWindow):
     def _init_window(self) -> None:
         self.setWindowTitle(f"{APP_NAME} v{VERSION}")
         self.setWindowIcon(self._icon)
+        self.setMinimumSize(960, 640)
         self.resize(1180, 800)
         self.navigationInterface.setExpandWidth(240)
         self.navigationInterface.expand(useAni=False)
@@ -131,6 +141,8 @@ class AppWindow(FluentWindow):
         self.dashboard.set_state(state)
         if state == EngineState.ONLINE:
             QTimer.singleShot(600, self.messages_page.reload_chats)
+            if not self.channels:
+                QTimer.singleShot(900, self.request_sync)
         if self._tray is not None:
             self._tray.set_state(state)
         if state == EngineState.ERROR and detail:
@@ -163,18 +175,40 @@ class AppWindow(FluentWindow):
         self.schedule(self.engine.start())
         self.autobuy.start_watchdog()
 
+    def auto_start(self) -> None:
+        if self.engine.is_running or not self.config.is_ready:
+            return
+        self.schedule(self.engine.start(insistir=True))
+        self.autobuy.start_watchdog()
+
     def schedule(self, coro):
         return self._loop.create_task(coro)
 
     def open_setup_wizard(self) -> None:
-        SetupWizard(self, self).exec()
+        wizard = SetupWizard(self, self)
+        if wizard.exec() and wizard.connected:
+            self.switchTo(self.channels_page)
 
-    async def _request_code(self, phone: str) -> str | None:
-        dialog = CodeDialog(phone, self)
+    def confirm(self, title: str, text: str, ok_text: str = "Confirmar") -> bool:
+        box = MessageBox(title, text, self)
+        box.yesButton.setText(ok_text)
+        box.cancelButton.setText("Cancelar")
+        return bool(box.exec())
+
+    def _call_attention(self, message: str) -> None:
+        hidden = not self.isVisible() or self.isMinimized()
+        self._show_window()
+        if hidden and self._tray is not None:
+            self._tray.notify(APP_NAME, message)
+
+    async def _request_code(self, phone: str, aviso: str = "") -> str | None:
+        self._call_attention("Digite o código de login do Telegram")
+        dialog = CodeDialog(phone, self, aviso)
         return await self._await_dialog(dialog, dialog.code)
 
-    async def _request_password(self) -> str | None:
-        dialog = PasswordDialog(self)
+    async def _request_password(self, aviso: str = "") -> str | None:
+        self._call_attention("Digite a senha de duas etapas do Telegram")
+        dialog = PasswordDialog(self, aviso)
         return await self._await_dialog(dialog, dialog.password)
 
     def _await_dialog(self, dialog, getter):
@@ -215,14 +249,25 @@ class AppWindow(FluentWindow):
         except Exception:
             pass
 
-    async def _on_autobuy_result(self, result: BuyResult) -> None:
+    async def send_result(self, result: BuyResult) -> bool:
         message = build_message(result)
         sent = await self.engine.notify_me(message, result.screenshot or None)
         if not sent and self.engine.state in (EngineState.OFFLINE, EngineState.ERROR):
-            await send_pix_notification(self.config, result)
+            sent = await send_pix_notification(self.config, result)
+        return sent
+
+    async def _on_autobuy_result(self, result: BuyResult) -> None:
+        await self.send_result(result)
         self.autobuy_page.refresh()
         if result.status == BuyStatus.PIX_READY:
             self._toast("PIX gerado! Confira a aba Auto-Compra", "success")
+        elif result.status == BuyStatus.DRY_RUN_OK:
+            self._toast("Auto-Compra: simulação concluída, nenhum pedido foi feito", "success")
+        elif result.status in (BuyStatus.LOGIN_REQUIRED, BuyStatus.BLOCKED):
+            self.alert(headline(result))
+        elif result.status not in SUCCESS_STATUSES:
+            detalhe = f": {result.detail}" if result.detail else ""
+            self._toast(f"{headline(result)}{detalhe}", "warning")
 
     def open_watch_editor(self, item: WatchItem | None) -> None:
         dialog = WatchDialog(item, self)
@@ -233,6 +278,10 @@ class AppWindow(FluentWindow):
         self._toast("Produto salvo", "success")
 
     def delete_watch_item(self, item_id: str) -> None:
+        item = next((i for i in self.autobuy.items if i.id == item_id), None)
+        nome = item.name if item else "este produto"
+        if not self.confirm("Excluir produto", f"Excluir o produto vigiado '{nome}'? Não dá para desfazer.", "Excluir"):
+            return
         self.autobuy.remove_item(item_id)
         self.autobuy_page.refresh()
         self._toast("Produto removido", "info")
@@ -252,6 +301,10 @@ class AppWindow(FluentWindow):
         self._toast("Filtro salvo", "success")
 
     def delete_filter(self, filter_id: str) -> None:
+        flt = next((f for f in self.filters if f.id == filter_id), None)
+        nome = flt.name if flt else "este filtro"
+        if not self.confirm("Excluir filtro", f"Excluir o filtro '{nome}'? Não dá para desfazer.", "Excluir"):
+            return
         self.filters = [f for f in self.filters if f.id != filter_id]
         self.filter_store.save(self.filters)
         self.filters_page.refresh()
@@ -271,11 +324,22 @@ class AppWindow(FluentWindow):
             target.append(chat_id)
         elif not enabled and chat_id in target:
             target.remove(chat_id)
+        label = self.config.channel_name(chat_id)
         if enabled and name and chat_id not in self.config.aliases:
             self.config.aliases[chat_id] = name
         elif not enabled and chat_id not in self.config.source_ids and chat_id not in self.config.destination_ids:
             self.config.aliases.pop(chat_id, None)
         self.config.save()
+        if not enabled:
+            campo = "source_ids" if role == "source" else "destination_ids"
+            usados = [f.name for f in self.filters if chat_id in getattr(f, campo)]
+            if usados:
+                papel = "origem" if role == "source" else "destino"
+                efeito = "não dispara mais para ele" if role == "source" else "não envia mais para ele"
+                nomes = ", ".join(usados)
+                self._toast(f"{label} era {papel} dos filtros {nomes}: cada um {efeito}", "warning")
+        self.filters_page.refresh()
+        self.dashboard.refresh()
 
     def request_sync(self) -> None:
         if not self.engine.is_running:
@@ -297,24 +361,82 @@ class AppWindow(FluentWindow):
         finally:
             self.channels_page.set_syncing(False)
 
-    def save_settings(self, payload: dict, silent: bool = False) -> None:
+    def save_settings(self, payload: dict, silent: bool = False) -> bool:
         raw_id = str(payload.get("api_id", "")).strip()
-        try:
-            self.config.api_id = int(raw_id) if raw_id else 0
-        except ValueError:
-            self.config.api_id = 0
+        if raw_id and not raw_id.isdigit():
+            self._toast("O API ID tem só números. Confira em my.telegram.org.", "error")
+            return False
+        antes = (self.config.api_id, _digits(self.config.phone), self.config.bot_token)
+        self.config.api_id = int(raw_id) if raw_id else 0
         self.config.api_hash = str(payload.get("api_hash", "")).strip()
         self.config.bot_token = str(payload.get("bot_token", "")).strip()
         self.config.phone = str(payload.get("phone", "")).strip()
         self.config.allow_self = bool(payload.get("allow_self"))
         self.config.auto_start = bool(payload.get("auto_start"))
         saved = self.config.save()
-        if not silent:
+        conta_mudou = bool(antes[0] and antes[1]) and antes[:2] != (self.config.api_id, _digits(self.config.phone))
+        bot_mudou = bool(antes[2]) and antes[2] != self.config.bot_token
+        if saved and (conta_mudou or bot_mudou):
+            self._forget_sessions(conta_mudou, bot_mudou, silent)
+        elif not silent:
             self._toast("Configurações salvas" if saved else "Não foi possível salvar", "success" if saved else "error")
         self.channels_page.refresh()
+        self.dashboard.refresh_account()
+        return saved
+
+    def save_behavior(self, allow_self: bool, auto_start: bool) -> None:
+        self.config.allow_self = allow_self
+        self.config.auto_start = auto_start
+        if not self.config.save():
+            self._toast("Não foi possível salvar", "error")
+
+    def _forget_sessions(self, conta: bool, bot: bool, silent: bool) -> None:
+        if self.engine.is_running:
+            self.schedule(self._stop_and_forget(conta, bot, silent))
+        else:
+            self._erase_sessions(conta, bot, silent)
+
+    async def _stop_and_forget(self, conta: bool, bot: bool, silent: bool) -> None:
+        self.autobuy.stop_watchdog()
+        await self.engine.stop()
+        self._erase_sessions(conta, bot, silent)
+
+    def _erase_sessions(self, conta: bool, bot: bool, silent: bool) -> None:
+        if conta:
+            self.engine.forget_session("user")
+        if bot:
+            self.engine.forget_session("bot")
+        if not silent:
+            aviso = "Conta trocada" if conta else "Bot trocado"
+            self._toast(f"{aviso}: inicie o monitor para entrar com os dados novos", "success")
+
+    def logout_telegram(self) -> None:
+        pergunta = (
+            "Sair da conta do Telegram neste app? A sessão é encerrada e, para voltar, "
+            "será preciso digitar um novo código de login."
+        )
+        if not self.confirm("Sair da conta", pergunta, "Sair da conta"):
+            return
+
+        async def sair() -> None:
+            self.autobuy.stop_watchdog()
+            encerrada = await self.engine.log_out()
+            if encerrada:
+                self._toast("Você saiu da conta do Telegram", "success")
+            else:
+                self._toast(
+                    "Sessão apagada deste computador. Para encerrá-la também no Telegram, "
+                    "use Configurações > Dispositivos no app",
+                    "warning",
+                )
+            self.dashboard.refresh_account()
+
+        self.schedule(sair())
 
     def toggle_theme(self, dark: bool) -> None:
         apply_theme(dark)
+        self.config.dark_theme = dark
+        self.config.save()
 
     def is_windows_autostart(self) -> bool:
         if os.name != "nt":
@@ -347,10 +469,10 @@ class AppWindow(FluentWindow):
 
     def _startup_command(self) -> str:
         if getattr(sys, "frozen", False):
-            return f'"{sys.executable}"'
+            return f'"{sys.executable}" {TRAY_FLAG}'
         script = paths.resource_path("app.py")
         launcher = sys.executable.replace("python.exe", "pythonw.exe")
-        return f'"{launcher}" "{script}"'
+        return f'"{launcher}" "{script}" {TRAY_FLAG}'
 
     def toast(self, message: str, kind: str = "info") -> None:
         self._toast(message, kind)
@@ -388,6 +510,14 @@ class AppWindow(FluentWindow):
         if not self._really_quit and self._tray is not None:
             event.ignore()
             self.hide()
+            if not self.config.tray_hint_shown:
+                self._tray.notify(
+                    APP_NAME,
+                    "Continua rodando na bandeja. Para sair, clique com o botão direito no ícone e escolha Sair.",
+                    warning=False,
+                )
+                self.config.tray_hint_shown = True
+                self.config.save()
             return
         if self.engine.is_running:
             self.schedule(self.engine.stop())

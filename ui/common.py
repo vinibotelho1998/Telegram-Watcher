@@ -1,13 +1,89 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QVBoxLayout, QWidget
-from qfluentwidgets import SingleDirectionScrollArea, SubtitleLabel, TitleLabel
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QSizePolicy, QVBoxLayout, QWidget
+from qfluentwidgets import (
+    BodyLabel,
+    CaptionLabel,
+    SingleDirectionScrollArea,
+    StrongBodyLabel,
+    SubtitleLabel,
+    TitleLabel,
+)
 
 
 def plain(label: QLabel) -> QLabel:
     label.setTextFormat(Qt.TextFormat.PlainText)
     return label
+
+
+def format_int(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
+
+
+def format_brl(value: float) -> str:
+    texto = f"{float(value):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"R$ {texto}"
+
+
+class _Elide:
+    def _setup_elide(self, text: str) -> None:
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setWordWrap(False)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(24)
+        self._full = ""
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        self._full = " ".join((text or "").split())
+        self.setToolTip(self._full)
+        self._elide()
+
+    def full_text(self) -> str:
+        return self._full
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        largura = self.width() - 2
+        texto = self._full
+        if largura > 0:
+            texto = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight, largura)
+        QLabel.setText(self, texto)
+        self.setToolTip(self._full if texto != self._full else "")
+
+    def sizeHint(self):  # noqa: N802
+        hint = super().sizeHint()
+        hint.setWidth(self.fontMetrics().horizontalAdvance(self._full) + 4)
+        return hint
+
+    def minimumSizeHint(self):  # noqa: N802
+        hint = super().minimumSizeHint()
+        hint.setWidth(24)
+        return hint
+
+
+def _elided(base):
+    class Elided(_Elide, base):
+        def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+            base.__init__(self, parent)
+            self._setup_elide(text)
+
+    Elided.__name__ = f"Elided{base.__name__}"
+    return Elided
+
+
+ElidedBody = _elided(BodyLabel)
+ElidedStrong = _elided(StrongBodyLabel)
+ElidedCaption = _elided(CaptionLabel)
+ElidedSubtitle = _elided(SubtitleLabel)
 
 
 def clear_layout(layout: QLayout) -> None:

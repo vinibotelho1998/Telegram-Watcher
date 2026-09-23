@@ -20,8 +20,10 @@ from qfluentwidgets import (
 from watcher.autobuy import registry
 from watcher.autobuy.criteria import Criteria
 from watcher.autobuy.models import WatchItem
+from watcher.autobuy.resolver import extract_urls
 
 from .chips import WordChips
+from .common import format_brl
 from .theme import PALETTE
 
 _EXAMPLE = (
@@ -60,7 +62,10 @@ class WatchDialog(MessageBoxBase):
         scroll = SingleDirectionScrollArea()
         scroll.setWidgetResizable(True)
         scroll.enableTransparentBackground()
-        scroll.setMinimumHeight(520)
+        altura = 520
+        if parent is not None and parent.height() > 0:
+            altura = min(altura, max(240, parent.height() - 230))
+        scroll.setMinimumHeight(altura)
         host = QWidget()
         host.setStyleSheet("QWidget { background: transparent; }")
         body = QVBoxLayout(host)
@@ -99,13 +104,20 @@ class WatchDialog(MessageBoxBase):
         body.addWidget(self._price_section())
         body.addWidget(self._test_section())
 
+        self.missing = CaptionLabel("")
+        self.missing.setWordWrap(True)
+        self.missing.setStyleSheet(f"color: {PALETTE['danger']};")
+        self.viewLayout.addWidget(self.missing)
+
         self._load(existing)
         self.yesButton.setText("Salvar")
         self.cancelButton.setText("Cancelar")
         for chips in (self.all_chips, self.any_chips, self.none_chips):
             chips.changed.connect(self._on_change)
         self.name_input.textChanged.connect(self._validate)
-        self.max_input.textChanged.connect(self._validate)
+        self.max_input.textChanged.connect(self._on_change)
+        self.min_input.textChanged.connect(self._on_change)
+        self.store_combo.currentIndexChanged.connect(self._on_change)
         self._on_change()
         self.widget.setMinimumWidth(620)
 
@@ -188,11 +200,46 @@ class WatchDialog(MessageBoxBase):
         self._validate()
         self._run_preview()
 
+    def _problems(self) -> list[str]:
+        faltando: list[str] = []
+        if not self.name_input.text().strip():
+            faltando.append("dê um nome ao produto")
+        if self.criteria().is_empty():
+            faltando.append("coloque ao menos uma palavra em TODAS ou em UMA destas")
+        maximo = parse_price(self.max_input.text())
+        minimo = parse_price(self.min_input.text())
+        if maximo <= 0:
+            faltando.append("informe o preço máximo")
+        elif minimo >= maximo:
+            faltando.append("o preço mínimo precisa ser menor que o máximo")
+        return faltando
+
     def _validate(self) -> None:
-        valid = bool(self.name_input.text().strip())
-        valid = valid and not self.criteria().is_empty()
-        valid = valid and parse_price(self.max_input.text()) > 0
-        self.yesButton.setEnabled(valid)
+        faltando = self._problems()
+        self.yesButton.setEnabled(not faltando)
+        self.missing.setText(f"Para salvar: {'; '.join(faltando)}." if faltando else "")
+
+    def _price_window(self) -> str:
+        maximo = parse_price(self.max_input.text())
+        minimo = parse_price(self.min_input.text())
+        if maximo <= 0:
+            return "O robô abre o link, mas falta definir o preço máximo"
+        if minimo > 0:
+            return f"O robô abre o link e só compra se o preço à vista estiver entre {format_brl(minimo)} e {format_brl(maximo)}"
+        return f"O robô abre o link e só compra se o preço à vista for até {format_brl(maximo)}"
+
+    def _link_problem(self, text: str) -> tuple[str, str]:
+        if not extract_urls(text):
+            return "danger", "Sem link de loja: o robô ignoraria esta mensagem"
+        links = registry.direct_products(text)
+        loja = self._store_ids[self.store_combo.currentIndex()]
+        if not links:
+            return "warning", "O link não é de uma loja suportada. Se for encurtador, o robô abre para descobrir a loja"
+        if loja and not any(spec.id == loja for spec, _url in links):
+            spec = registry.get(loja)
+            outras = ", ".join(dict.fromkeys(s.label for s, _url in links))
+            return "danger", f"O link é da {outras}, mas este produto só compra na {spec.label if spec else loja}"
+        return "", ""
 
     def _run_preview(self) -> None:
         text = self.test_input.toPlainText().strip()
@@ -202,9 +249,18 @@ class WatchDialog(MessageBoxBase):
             self.test_detail.setText(self.criteria().summary())
             return
         report = self.criteria().check(text)
-        color = PALETTE["success"] if report.matched else PALETTE["danger"]
-        mark = "✔" if report.matched else "✘"
-        self.test_result.setText(f"{mark}  {report.reason}")
+        tom, motivo = ("", "")
+        if report.matched:
+            tom, motivo = self._link_problem(text)
+        if not report.matched:
+            color, mark, reason = PALETTE["danger"], "✘", report.reason
+        elif tom == "danger":
+            color, mark, reason = PALETTE["danger"], "✘", f"As palavras batem, mas: {motivo}"
+        elif tom == "warning":
+            color, mark, reason = PALETTE["warning"], "?", f"As palavras batem. {motivo}"
+        else:
+            color, mark, reason = PALETTE["success"], "✔", f"As palavras batem. {self._price_window()}."
+        self.test_result.setText(f"{mark}  {reason}")
         self.test_result.setStyleSheet(f"color: {color}; font-weight: 600;")
         self.test_detail.setText(self._detail(report))
 
@@ -230,7 +286,7 @@ class WatchDialog(MessageBoxBase):
             return
         if existing.store in self._store_ids:
             self.store_combo.setCurrentIndex(self._store_ids.index(existing.store))
-        criteria = Criteria.parse(existing.include, existing.exclude)
+        criteria = existing.criteria()
         self.name_input.setText(existing.name)
         self.all_chips.set_words(criteria.all_words)
         self.any_chips.set_words(criteria.any_words)
@@ -254,4 +310,6 @@ class WatchDialog(MessageBoxBase):
             store=self._store_ids[self.store_combo.currentIndex()],
             min_price=parse_price(self.min_input.text()),
             disable_after_buy=self.disable_check.isChecked(),
+            all_words=criteria.all_words,
+            any_words=criteria.any_words,
         )

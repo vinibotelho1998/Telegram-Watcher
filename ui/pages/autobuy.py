@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QGuiApplication, QPixmap
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -23,16 +23,17 @@ from qfluentwidgets import (
 
 from watcher import paths
 from watcher.autobuy import registry
-from watcher.autobuy.criteria import Criteria
 from watcher.autobuy.manager import AutobuyManager
-from watcher.autobuy.models import WatchItem
+from watcher.autobuy.models import BuyStatus, WatchItem, status_label
 from watcher.autobuy.records import PixRecord, delete_record, load_records
 
-from ..common import PageView, clear_layout, make_vscroll, plain
-from ..test_dialog import TestDialog
-from ..theme import PALETTE
+from ..chips import FlowLayout
+from ..common import ElidedBody, ElidedStrong, PageView, clear_layout, format_brl, make_vscroll, plain
+from ..test_dialog import BUY_MODE, TestDialog
+from ..theme import PALETTE, hairline, surface, text_tone
 
 _PREVIEW_WIDTH = 460
+_CART_NOTE = "Atenção: o robô remove os outros itens do seu carrinho nessa loja."
 
 _STEP_LABELS = {
     "produto": "produto",
@@ -45,15 +46,16 @@ _STEP_LABELS = {
     "pix": "PIX",
 }
 
-_CODE_STYLE = f"""
+def _code_style() -> str:
+    return f"""
 QLabel#pixCode {{
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: {surface()};
+    border: 1px solid {hairline()};
     border-radius: 8px;
     padding: 10px;
     font-family: 'Cascadia Mono', Consolas, monospace;
     font-size: 11px;
-    color: {PALETTE['capture']};
+    color: {text_tone('capture')};
 }}
 """
 
@@ -82,12 +84,6 @@ class AutobuyPage(PageView):
         self._connecting: set[str] = set()
         self._running = False
 
-        self.master_switch = SwitchButton()
-        self.master_switch.setOnText("Ativa")
-        self.master_switch.setOffText("Desligada")
-        self.master_switch.setChecked(self._manager.settings.enabled)
-        self.master_switch.checkedChanged.connect(self._on_master)
-
         new_btn = PrimaryPushButton("Novo produto")
         new_btn.setIcon(FluentIcon.ADD)
         new_btn.clicked.connect(lambda: self._edit_item(None))
@@ -101,7 +97,6 @@ class AutobuyPage(PageView):
         log_btn.setToolTip("Histórico completo das compras automáticas")
         log_btn.clicked.connect(self._open_log)
 
-        self.add_header_widget(self.master_switch)
         self.add_header_widget(new_btn)
         self.add_header_widget(log_btn)
         self.add_header_widget(folder_btn)
@@ -117,17 +112,31 @@ class AutobuyPage(PageView):
     def refresh(self) -> None:
         clear_layout(self._list)
         self._list.addWidget(self._config_card())
-        self._list.addWidget(self._section("Lojas"))
-        self._widgets = {}
-        for spec in registry.all_stores():
-            self._list.addWidget(self._store_card(spec))
         self._list.addWidget(self._section("Produtos vigiados"))
         if self._manager.items:
             for item in self._manager.items:
                 self._list.addWidget(self._item_card(item))
         else:
             self._list.addWidget(self._hint("Nenhum produto vigiado. Clique em Novo produto para configurar o que comprar."))
+        self._list.addWidget(self._section("Lojas"))
+        self._widgets = {}
+        for spec in registry.all_stores():
+            self._list.addWidget(self._store_card(spec))
         self._list.addStretch(1)
+
+    def _state_text(self) -> tuple[str, str]:
+        settings = self._manager.settings
+        if getattr(self._manager, "login_open", False):
+            return (
+                "Robô ocupado: janela de login aberta. Promoções que chegarem agora esperam até 2 minutos na fila, "
+                "feche o navegador quando terminar o login.",
+                "warning",
+            )
+        if not settings.enabled:
+            return "Compra automática desligada: nenhum produto será comprado.", "muted"
+        if settings.real_mode:
+            return "Compra real ativa: quando uma promoção casar com um produto, o pedido é finalizado e gera PIX de verdade.", "warning"
+        return "Simulação: o robô percorre o checkout e para antes de finalizar, nenhum pedido é feito.", "success"
 
     def _store_card(self, spec) -> SimpleCardWidget:
         card = SimpleCardWidget()
@@ -141,10 +150,9 @@ class AutobuyPage(PageView):
         self._status_dots[spec.id] = dot
         header.addWidget(dot)
         header.addWidget(StrongBodyLabel(spec.label))
-        status = BodyLabel("")
+        status = ElidedBody("")
         self._status_labels[spec.id] = status
-        header.addWidget(status)
-        header.addStretch(1)
+        header.addWidget(status, 1)
 
         ocupado = self._checking or self._connecting
 
@@ -318,6 +326,7 @@ class AutobuyPage(PageView):
         self._set_busy(store_id, self._connecting, True)
         self._notify(f"Abrindo a {label}: faça login na janela e feche o navegador")
         self._app.schedule(self._connect_store_async(store_id))
+        QTimer.singleShot(300, self._paint_state)
 
     async def _connect_store_async(self, store_id: str) -> None:
         spec = registry.get(store_id)
@@ -355,8 +364,15 @@ class AutobuyPage(PageView):
         url = dialog.result_url()
         mode = dialog.result_mode()
         coupon = dialog.result_coupon()
+        if mode == BUY_MODE:
+            pergunta = (
+                f"Isto finaliza um pedido de verdade e gera um PIX para pagar.\n\n{url}\n\n"
+                "Se você não pagar, o pedido expira e cancela sozinho. Continuar?"
+            )
+            if not self._app.confirm("Comprar de verdade", pergunta, "Comprar e gerar PIX"):
+                return
         self._test_url[store_id] = url
-        self._test_mode[store_id] = mode
+        self._test_mode[store_id] = 0 if mode == BUY_MODE else mode
         self._test_coupon[store_id] = coupon
         self._running = True
         self._set_test_status(store_id, "Teste em andamento, acompanhe na aba Console...", "capture")
@@ -377,11 +393,10 @@ class AutobuyPage(PageView):
         if product is None:
             self._set_test_status(store_id, "Não consegui ler os dados do produto nessa página.", "danger")
             return
-        estoque = "disponível" if product.available else "indisponível"
-        price = f"{product.pix_price:.2f}".replace(".", ",")
+        estoque = "disponível" if product.available else "sem estoque"
         self._set_test_status(
             store_id,
-            f"{product.title[:70]} — à vista no PIX R$ {price} ({estoque})",
+            f"{product.title[:70]} — à vista no PIX {format_brl(product.pix_price)} ({estoque})",
             "success" if product.available else "warning",
         )
 
@@ -390,23 +405,27 @@ class AutobuyPage(PageView):
         if result is None:
             self._set_test_status(store_id, "O teste não pôde ser executado, veja o Console.", "danger")
             return
-        if result.status.value == "pix_ready":
-            self._set_test_status(
-                store_id,
-                f"PIX gerado em {_seconds(result.elapsed)}. O código está aqui embaixo e no seu Telegram.",
-                "success",
+        if result.status == BuyStatus.PIX_READY:
+            self._open_stores.add(store_id)
+            records = load_records(store=store_id)
+            if records:
+                self._expanded.add(records[0].stamp)
+            enviado = await self._app.send_result(result)
+            onde = "Ele está aqui embaixo e também no seu Telegram." if enviado else (
+                "Ele está aqui embaixo. Não consegui mandar para o seu Telegram."
             )
+            self._set_test_status(store_id, f"PIX gerado em {_seconds(result.elapsed)}. {onde}", "success")
             return
-        if result.status.value == "dry_run_ok":
+        if result.status == BuyStatus.DRY_RUN_OK:
+            await self._app.send_result(result)
             self._set_test_status(
                 store_id,
                 f"Simulação percorreu o checkout em {_seconds(result.elapsed)} e parou antes de finalizar. {result.detail}",
                 "success",
             )
             return
-        self._set_test_status(
-            store_id, f"Terminou como {result.status.value}: {result.detail or 'sem detalhes'}", "warning"
-        )
+        detalhe = f": {result.detail}" if result.detail else ""
+        self._set_test_status(store_id, f"Não concluiu, {status_label(result.status)}{detalhe}", "warning")
 
     def _section(self, title: str) -> QWidget:
         label = StrongBodyLabel(title)
@@ -419,41 +438,88 @@ class AutobuyPage(PageView):
         label.setStyleSheet(f"color: {PALETTE['muted']};")
         return label
 
+    @staticmethod
+    def _pair(label: str, widget: QWidget, tooltip: str = "") -> QWidget:
+        box = QWidget()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(0, 0, 18, 0)
+        row.setSpacing(10)
+        row.addWidget(BodyLabel(label))
+        row.addWidget(widget)
+        if tooltip:
+            box.setToolTip(tooltip)
+        return box
+
     def _config_card(self) -> SimpleCardWidget:
         card = SimpleCardWidget()
-        row = QHBoxLayout(card)
-        row.setContentsMargins(22, 14, 22, 14)
-        row.setSpacing(12)
+        column = QVBoxLayout(card)
+        column.setContentsMargins(22, 14, 22, 14)
+        column.setSpacing(10)
 
-        row.addWidget(BodyLabel("Modo:"))
+        top = QHBoxLayout()
+        top.setSpacing(12)
+        top.addWidget(StrongBodyLabel("Compra automática"))
+        self.master_switch = SwitchButton()
+        self.master_switch.setOnText("Ligada")
+        self.master_switch.setOffText("Desligada")
+        self.master_switch.setChecked(self._manager.settings.enabled)
+        self.master_switch.checkedChanged.connect(self._on_master)
+        top.addWidget(self.master_switch)
+        top.addStretch(1)
+        column.addLayout(top)
+
+        self.state_label = BodyLabel("")
+        self.state_label.setWordWrap(True)
+        column.addWidget(self.state_label)
+
+        host = QWidget()
+        flow = FlowLayout(host, spacing=10)
+
         self.mode_combo = ComboBox()
         self.mode_combo.addItems(["Simulação (para antes de finalizar)", "Compra real (gera o PIX)"])
         self.mode_combo.setCurrentIndex(1 if self._manager.settings.real_mode else 0)
         self.mode_combo.currentIndexChanged.connect(self._on_mode)
-        row.addWidget(self.mode_combo)
+        flow.addWidget(self._pair("Modo:", self.mode_combo, _CART_NOTE))
 
-        row.addSpacing(18)
-        row.addWidget(BodyLabel("Aplicar cupom da mensagem:"))
         self.coupon_switch = SwitchButton()
         self.coupon_switch.setOnText("Sim")
         self.coupon_switch.setOffText("Não")
         self.coupon_switch.setChecked(self._manager.settings.use_coupon)
         self.coupon_switch.checkedChanged.connect(self._on_coupon)
-        row.addWidget(self.coupon_switch)
+        flow.addWidget(self._pair("Aplicar cupom da mensagem:", self.coupon_switch))
 
-        row.addSpacing(18)
-        row.addWidget(BodyLabel("Mostrar o navegador:"))
         self.window_switch = SwitchButton()
         self.window_switch.setOnText("Sim")
         self.window_switch.setOffText("Não")
         self.window_switch.setChecked(not self._manager.settings.headless)
         self.window_switch.checkedChanged.connect(self._on_window)
-        self.window_switch.setToolTip(
-            "Com a janela visível a loja desconfia menos e você consegue resolver um captcha na hora."
+        flow.addWidget(
+            self._pair(
+                "Mostrar o navegador:",
+                self.window_switch,
+                "Com a janela visível a loja desconfia menos e você consegue resolver um captcha na hora. "
+                "Com ela oculta, um captcha encerra a compra.",
+            )
         )
-        row.addWidget(self.window_switch)
-        row.addStretch(1)
+        column.addWidget(host)
+
+        note = CaptionLabel(
+            "Lê as promoções dos canais marcados como Origem, enquanto o monitor está ligado. " + _CART_NOTE
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {PALETTE['muted']};")
+        column.addWidget(note)
+        self._paint_state()
         return card
+
+    def _paint_state(self) -> None:
+        label = getattr(self, "state_label", None)
+        if label is None:
+            return
+        texto, tom = self._state_text()
+        label.setText(texto)
+        peso = "600" if tom == "warning" else "400"
+        label.setStyleSheet(f"color: {text_tone(tom)}; font-weight: {peso};")
 
     def _item_card(self, item: WatchItem) -> SimpleCardWidget:
         card = SimpleCardWidget()
@@ -463,15 +529,20 @@ class AutobuyPage(PageView):
 
         titles = QVBoxLayout()
         titles.setSpacing(2)
-        titles.addWidget(StrongBodyLabel(item.name))
-        criteria = Criteria.parse(item.include, item.exclude)
+        titles.addWidget(ElidedStrong(item.name))
+        criteria = item.criteria()
         parts = [criteria.summary()]
-        parts.append(f"até R$ {item.max_price:.2f}".replace(".", ","))
+        parts.append(f"até {format_brl(item.max_price)}")
         spec = registry.get(item.store)
         parts.append(spec.label if spec else "qualquer loja")
         meta = CaptionLabel("   |   ".join(parts))
+        meta.setWordWrap(True)
         meta.setStyleSheet(f"color: {PALETTE['muted']};")
         titles.addWidget(meta)
+        if not self._manager.settings.enabled and item.enabled:
+            pausado = CaptionLabel("Pausado: a compra automática está desligada no topo da página")
+            pausado.setStyleSheet(f"color: {PALETTE['warning']};")
+            titles.addWidget(pausado)
         row.addLayout(titles, 1)
 
         switch = SwitchButton()
@@ -506,7 +577,7 @@ class AutobuyPage(PageView):
         title = plain(StrongBodyLabel(record.title))
         title.setWordWrap(True)
         titles.addWidget(title)
-        meta_text = f"{record.created_at}   |   À vista no PIX: R$ {record.price:.2f}"
+        meta_text = f"{record.created_at}   |   À vista no PIX: {format_brl(record.price)}"
         if record.elapsed:
             meta_text += f"   |   comprado em {_seconds(record.elapsed)}"
         meta = CaptionLabel(meta_text)
@@ -528,7 +599,9 @@ class AutobuyPage(PageView):
         delete_btn = TransparentPushButton()
         delete_btn.setIcon(FluentIcon.DELETE)
         delete_btn.setToolTip("Apagar este registro")
-        delete_btn.clicked.connect(lambda _=False, stamp=record.stamp: self._delete_record(stamp))
+        delete_btn.clicked.connect(
+            lambda _=False, r=record: self._delete_record(r.stamp, r.title, bool(r.pix_code))
+        )
         header.addWidget(delete_btn, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
 
@@ -543,7 +616,7 @@ class AutobuyPage(PageView):
             if record.pix_code:
                 code = plain(QLabel(record.pix_code))
                 code.setObjectName("pixCode")
-                code.setStyleSheet(_CODE_STYLE)
+                code.setStyleSheet(_code_style())
                 code.setWordWrap(True)
                 code.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 layout.addWidget(code)
@@ -568,7 +641,16 @@ class AutobuyPage(PageView):
             self._expanded.add(stamp)
         self.refresh()
 
-    def _delete_record(self, stamp: str) -> None:
+    def _delete_record(self, stamp: str, title: str = "", has_code: bool = False) -> None:
+        if self._app is not None:
+            aviso = (
+                " O código PIX copia e cola e o print somem desta tela: se ainda não pagou, copie o código antes."
+                if has_code
+                else ""
+            )
+            pergunta = f"Apagar o registro de '{title or stamp}'?{aviso}"
+            if not self._app.confirm("Apagar registro de PIX", pergunta, "Apagar"):
+                return
         removed = delete_record(stamp)
         self._expanded.discard(stamp)
         self.refresh()
@@ -577,13 +659,25 @@ class AutobuyPage(PageView):
     def _on_master(self, checked: bool) -> None:
         self._manager.set_enabled(checked)
         self._notify("Compra automática ativada" if checked else "Compra automática desligada")
+        QTimer.singleShot(0, self.refresh)
 
     def _on_mode(self, index: int) -> None:
+        if index == 1 and self._app is not None:
+            pergunta = (
+                "Com a Compra real, quando uma promoção casar com um produto ligado, o pedido é finalizado "
+                "de verdade e gera um PIX para pagar. Continuar?"
+            )
+            if not self._app.confirm("Ligar a compra real", pergunta, "Ligar compra real"):
+                self.mode_combo.blockSignals(True)
+                self.mode_combo.setCurrentIndex(0)
+                self.mode_combo.blockSignals(False)
+                return
         self._manager.set_real_mode(index == 1)
         if index == 1:
             self._notify("Modo compra real: pedidos serão finalizados de verdade", "warning")
         else:
             self._notify("Modo simulação: para antes de finalizar o pedido")
+        self._paint_state()
 
     def _on_coupon(self, checked: bool) -> None:
         self._manager.set_use_coupon(checked)

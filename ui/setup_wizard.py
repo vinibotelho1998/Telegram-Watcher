@@ -18,7 +18,7 @@ from qfluentwidgets import (
 
 from watcher.models import EngineState
 
-from .theme import PALETTE
+from .theme import PALETTE, faint
 
 _STEP_COUNT = 4
 _CONNECT_STEP = 3
@@ -64,8 +64,20 @@ class SetupWizard(MessageBoxBase):
         self.viewLayout.addWidget(self._hint)
 
         self.widget.setMinimumWidth(560)
+        self._fill_from_config()
         self._wire_buttons()
         self._go_to(0)
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    def _fill_from_config(self) -> None:
+        config = self._app.config
+        self.api_id.setText(str(config.api_id) if config.api_id else "")
+        self.api_hash.setText(config.api_hash)
+        self.phone.setText(config.phone)
+        self.bot_token.setText(config.bot_token)
 
     def _build_header(self) -> None:
         header = QWidget()
@@ -174,6 +186,10 @@ class SetupWizard(MessageBoxBase):
         self.bot_token = PasswordLineEdit()
         self.bot_token.setPlaceholderText("Cole o token do bot (opcional)")
         layout.addWidget(self.bot_token)
+        bot_hint = CaptionLabel("Deixe vazio para enviar pela sua própria conta. Apagar o token remove o bot.")
+        bot_hint.setWordWrap(True)
+        bot_hint.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
+        layout.addWidget(bot_hint)
         layout.addStretch(1)
         return page
 
@@ -219,9 +235,20 @@ class SetupWizard(MessageBoxBase):
         for position, dot in enumerate(self._dots):
             active = position == index
             done = position < index
-            color = PALETTE["info"] if (active or done) else "rgba(255,255,255,0.12)"
+            color = PALETTE["info"] if (active or done) else faint()
             dot.setStyleSheet(f"background: {color}; border-radius: 3px;")
+        if index == _CONNECT_STEP and not self._connected:
+            self._describe_connect_step()
         self._update_buttons()
+
+    def _describe_connect_step(self) -> None:
+        texto = (
+            "Clique em Conectar ao Telegram. O código de verificação chega no app do Telegram, "
+            "na conversa chamada Telegram, e você digita na janela seguinte."
+        )
+        if self._app.engine.is_running:
+            texto += " O monitor está ligado e será reiniciado com estes dados."
+        self._connect_text.setText(texto)
 
     def _update_buttons(self) -> None:
         if self._connected:
@@ -276,12 +303,11 @@ class SetupWizard(MessageBoxBase):
         return False
 
     def _start_connection(self) -> None:
-        self._save_config()
         self._set_connecting(True)
         self._app.schedule(self._connection_task())
 
-    def _save_config(self) -> None:
-        self._app.save_settings(
+    def _save_config(self) -> bool:
+        return self._app.save_settings(
             {
                 "api_id": self.api_id.text(),
                 "api_hash": self.api_hash.text(),
@@ -291,19 +317,25 @@ class SetupWizard(MessageBoxBase):
                 "auto_start": self._app.config.auto_start,
             },
             silent=True,
-        )
+        ) is not False
 
     async def _connection_task(self) -> None:
         ok = False
+        engine = self._app.engine
         try:
-            ok = await self._app.engine.start()
+            if engine.is_running:
+                self._status.setText("Reiniciando o monitor com os dados novos...")
+                await engine.stop()
+            if self._save_config():
+                ok = await engine.start()
         except Exception:
             ok = False
         self._set_connecting(False)
-        if ok and self._app.engine.state == EngineState.ONLINE:
+        if ok and engine.state == EngineState.ONLINE:
             self._set_connected()
         else:
-            self._hint.setText("Não foi possível conectar. Confira os dados e tente novamente.")
+            motivo = getattr(engine, "last_error", "") or "Confira os dados e tente novamente."
+            self._hint.setText(f"Não foi possível conectar. {motivo}")
 
     def _set_connecting(self, value: bool) -> None:
         self._connecting = value
@@ -323,8 +355,8 @@ class SetupWizard(MessageBoxBase):
         self._connected = True
         self._connect_title.setText("Conta conectada")
         self._connect_text.setText(
-            "Pronto. Agora abra a aba Canais para sincronizar e escolher origem e destino, "
-            "depois crie filtros para definir o que será replicado."
+            "Pronto. Ao concluir, a aba Canais abre com a sua lista: marque Origem nos canais que quer "
+            "monitorar e Destino onde as mensagens devem chegar. Depois crie filtros para definir o que será replicado."
         )
         self._status.setText("")
         self.cancelButton.setDisabled(False)

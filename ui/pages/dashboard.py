@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import time
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    BodyLabel,
     CaptionLabel,
     FluentIcon,
     PrimaryPushButton,
@@ -15,12 +16,13 @@ from qfluentwidgets import (
 
 from watcher.models import EngineState
 
-from ..common import PageView, make_vscroll, plain
+from ..common import ElidedBody, ElidedStrong, PageView, make_vscroll
 from ..theme import PALETTE
 from ..widgets import ActivityChart, StatCard, StatusPill
 
 _FEED_LIMIT = 9
 _STATUS_KEY = {"captured": "capture", "forwarded": "success", "failed": "danger"}
+_RUNNING = (EngineState.ONLINE, EngineState.CONNECTING, EngineState.AUTH, EngineState.RECONNECTING, EngineState.STOPPING)
 
 
 class _FeedRow(QWidget):
@@ -42,8 +44,10 @@ class _FeedRow(QWidget):
 
         time_label = CaptionLabel(data.get("time", ""))
         time_label.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
-        source = plain(StrongBodyLabel(str(data.get("source", ""))))
-        text = plain(BodyLabel(str(data.get("text", ""))))
+        source = ElidedStrong(str(data.get("source", "")))
+        source.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        source.setMaximumWidth(220)
+        text = ElidedBody(str(data.get("text", "")))
         text.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
 
         layout.addWidget(dot)
@@ -62,6 +66,7 @@ class DashboardPage(PageView):
         super().__init__("dashboardPage", "Dashboard", parent=parent)
         self._app = app
         self._events = 0
+        self._state = EngineState.OFFLINE
 
         self.status_pill = StatusPill()
         self.account_btn = PushButton("Conectar conta")
@@ -81,7 +86,8 @@ class DashboardPage(PageView):
         cards.setSpacing(12)
         self.card_captured = StatCard("Capturadas", "info")
         self.card_sent = StatCard("Enviadas", "success")
-        self.card_filtered = StatCard("Filtradas", "muted")
+        self.card_filtered = StatCard("Descartadas", "muted")
+        self.card_filtered.setToolTip("Capturadas que nenhum filtro aprovou, por isso não foram replicadas")
         self.card_failed = StatCard("Falhas", "danger")
         for index, card in enumerate((self.card_captured, self.card_sent, self.card_filtered, self.card_failed)):
             cards.addWidget(card, 0, index)
@@ -91,7 +97,8 @@ class DashboardPage(PageView):
         chart_layout = QVBoxLayout(chart_card)
         chart_layout.setContentsMargins(20, 16, 20, 14)
         chart_layout.setSpacing(10)
-        chart_layout.addWidget(StrongBodyLabel("Atividade nas últimas 24 horas"))
+        self.chart_title = StrongBodyLabel("Capturas por hora do dia")
+        chart_layout.addWidget(self.chart_title)
         self.chart = ActivityChart()
         chart_layout.addWidget(self.chart)
         body.addWidget(chart_card)
@@ -109,7 +116,8 @@ class DashboardPage(PageView):
         self._feed = QVBoxLayout()
         self._feed.setSpacing(8)
         feed_layout.addLayout(self._feed)
-        self._empty = CaptionLabel("Nenhuma atividade ainda. Inicie o monitor para começar.")
+        self._empty = CaptionLabel("")
+        self._empty.setWordWrap(True)
         self._feed.addWidget(self._empty)
         body.addWidget(feed_card)
         body.addStretch(1)
@@ -118,11 +126,33 @@ class DashboardPage(PageView):
         self.set_state(EngineState.OFFLINE)
 
     def set_state(self, state: EngineState) -> None:
+        self._state = state
         self.status_pill.set_state(state)
-        running = state in (EngineState.ONLINE, EngineState.CONNECTING, EngineState.AUTH, EngineState.STOPPING)
+        running = state in _RUNNING
         self.toggle_btn.setText("Parar monitor" if running else "Iniciar monitor")
         self.toggle_btn.setIcon(FluentIcon.PAUSE if running else FluentIcon.PLAY)
         self.toggle_btn.setEnabled(state not in (EngineState.CONNECTING, EngineState.AUTH, EngineState.STOPPING))
+        self.refresh_account()
+        self._refresh_empty()
+
+    def refresh_account(self) -> None:
+        pronto = self._app.config.is_ready
+        self.account_btn.setText("Conta e credenciais" if pronto else "Conectar conta")
+        self.account_btn.setToolTip(
+            "Rever API, telefone e bot, ou reconectar a conta" if pronto else "Configurar a conta do Telegram"
+        )
+
+    def _refresh_empty(self) -> None:
+        if self._empty is None:
+            return
+        origens = len(self._app.config.source_ids)
+        if self._state not in _RUNNING:
+            texto = "Nenhuma atividade ainda. Inicie o monitor para começar."
+        elif not origens:
+            texto = "Nenhuma origem marcada. Em Canais, marque Origem nos canais que quer monitorar."
+        else:
+            texto = f"Aguardando mensagens de {origens} {'origem' if origens == 1 else 'origens'}."
+        self._empty.setText(texto)
 
     def refresh(self) -> None:
         metrics = self._app.engine.metrics
@@ -131,6 +161,12 @@ class DashboardPage(PageView):
         self.card_filtered.set_value(metrics.filtered)
         self.card_failed.set_value(metrics.failed)
         self.chart.set_data(metrics.by_hour)
+        if metrics.started_at:
+            desde = time.strftime("%d/%m %H:%M", time.localtime(metrics.started_at))
+            self.chart_title.setText(f"Capturas por hora do dia, desde {desde}")
+        else:
+            self.chart_title.setText("Capturas por hora do dia")
+        self._refresh_empty()
 
     def add_event(self, data: dict) -> None:
         if self._empty is not None:
@@ -139,7 +175,7 @@ class DashboardPage(PageView):
             self._empty = None
         self._feed.insertWidget(0, _FeedRow(data, self._app.open_conversation))
         self._events += 1
-        self.feed_count.setText(f"{self._events} eventos")
+        self.feed_count.setText(f"{self._events} {'evento' if self._events == 1 else 'eventos'}")
         while self._feed.count() > _FEED_LIMIT:
             item = self._feed.takeAt(self._feed.count() - 1)
             widget = item.widget()
