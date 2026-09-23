@@ -262,7 +262,7 @@ class Avatar(QLabel):
 
 
 class _ChatRow(CardWidget):
-    opened = pyqtSignal(int)
+    opened = pyqtSignal(object)
 
     def __init__(self, summary: ChatSummary, role: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)

@@ -1900,6 +1900,21 @@ def test_erro_ao_ler_a_conversa_so_aparece_se_ela_continua_aberta(qapp):
     pagina.deleteLater()
 
 
+def test_clicar_em_canal_com_id_grande_abre_a_propria_conversa(qapp):
+    from watcher.reader import ChatSummary
+
+    pagina, app = _pagina_de_conversas()
+    canal = -1001371796882
+    pagina._summaries = [ChatSummary(canal, "La Promotion - Promoções")]
+    pagina._render_chats()
+    pagina._rows[canal].clicked.emit()
+    assert pagina._chat_id == canal
+    assert pagina.thread_title.text() == "La Promotion - Promoções"
+    assert pagina._rows[canal]._marker.isVisibleTo(pagina._rows[canal])
+    assert app.agendados == ["MessagesPage._fetch_history", "MessagesPage._fetch_avatar"]
+    pagina.deleteLater()
+
+
 def test_carregar_conversas_mostra_a_lista_busca_fotos_e_reabre_a_conversa(qapp, tmp_path):
     from PyQt6.QtGui import QColor, QPixmap
 
