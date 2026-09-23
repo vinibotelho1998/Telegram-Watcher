@@ -17,7 +17,7 @@ from qfluentwidgets import (
 
 from watcher.models import Channel
 
-from ..common import PageView, clear_layout, make_vscroll
+from ..common import PageView, clear_layout, make_vscroll, plain
 from ..theme import PALETTE
 
 _RENDER_LIMIT = 200
@@ -32,7 +32,7 @@ class _ChannelRow(CardWidget):
 
         info = QVBoxLayout()
         info.setSpacing(1)
-        info.addWidget(StrongBodyLabel(channel.name or "Sem nome"))
+        info.addWidget(plain(StrongBodyLabel(channel.name or "Sem nome")))
         meta = CaptionLabel(f"{channel.kind.value}  ·  {channel.id}")
         meta.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         info.addWidget(meta)

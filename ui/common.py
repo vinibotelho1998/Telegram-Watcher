@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QHBoxLayout, QLayout, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLayout, QVBoxLayout, QWidget
 from qfluentwidgets import SingleDirectionScrollArea, SubtitleLabel, TitleLabel
+
+
+def plain(label: QLabel) -> QLabel:
+    label.setTextFormat(Qt.TextFormat.PlainText)
+    return label
 
 
 def clear_layout(layout: QLayout) -> None:

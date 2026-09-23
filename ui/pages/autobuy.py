@@ -28,7 +28,7 @@ from watcher.autobuy.manager import AutobuyManager
 from watcher.autobuy.models import WatchItem
 from watcher.autobuy.records import PixRecord, delete_record, load_records
 
-from ..common import PageView, clear_layout, make_vscroll
+from ..common import PageView, clear_layout, make_vscroll, plain
 from ..test_dialog import TestDialog
 from ..theme import PALETTE
 
@@ -173,7 +173,7 @@ class AutobuyPage(PageView):
         row.addStretch(1)
         layout.addLayout(row)
 
-        result = BodyLabel(self._test_status.get(spec.id, "Nenhum teste executado ainda."))
+        result = plain(BodyLabel(self._test_status.get(spec.id, "Nenhum teste executado ainda.")))
         result.setWordWrap(True)
         result.setStyleSheet(f"color: {PALETTE[self._test_color.get(spec.id, 'muted')]};")
         layout.addWidget(result)
@@ -503,7 +503,7 @@ class AutobuyPage(PageView):
         header.setSpacing(12)
         titles = QVBoxLayout()
         titles.setSpacing(2)
-        title = StrongBodyLabel(record.title)
+        title = plain(StrongBodyLabel(record.title))
         title.setWordWrap(True)
         titles.addWidget(title)
         meta_text = f"{record.created_at}   |   À vista no PIX: R$ {record.price:.2f}"
@@ -541,7 +541,7 @@ class AutobuyPage(PageView):
                 timings.setStyleSheet(f"color: {PALETTE['capture']};")
                 layout.addWidget(timings)
             if record.pix_code:
-                code = QLabel(record.pix_code)
+                code = plain(QLabel(record.pix_code))
                 code.setObjectName("pixCode")
                 code.setStyleSheet(_CODE_STYLE)
                 code.setWordWrap(True)

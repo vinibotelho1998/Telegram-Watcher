@@ -33,7 +33,7 @@ from watcher.filtering import matching_filters
 from watcher.models import ChannelKind
 from watcher.reader import ChatMessage, ChatSummary, preview_text
 
-from ..common import PageView, clear_layout, make_vscroll
+from ..common import PageView, clear_layout, make_vscroll, plain
 from ..theme import ACCENT, PALETTE, TEXT
 
 _PAGE_SIZE = 40
@@ -263,14 +263,14 @@ class _ChatRow(CardWidget):
         middle.setSpacing(1)
         top = QHBoxLayout()
         top.setSpacing(6)
-        self._name = StrongBodyLabel(_shorten(summary.name, 26))
+        self._name = plain(StrongBodyLabel(_shorten(summary.name, 26)))
         top.addWidget(self._name, 1)
         if role:
             tag = CaptionLabel(role)
             tag.setTextColor(QColor(ACCENT), QColor(ACCENT))
             top.addWidget(tag)
         middle.addLayout(top)
-        self._preview = CaptionLabel(_shorten(summary.preview, 38) or _KIND_LABEL.get(summary.kind, ""))
+        self._preview = plain(CaptionLabel(_shorten(summary.preview, 38) or _KIND_LABEL.get(summary.kind, "")))
         self._preview.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         middle.addWidget(self._preview)
         layout.addLayout(middle, 1)
@@ -354,7 +354,7 @@ class _Bubble(QWidget):
         body.setSpacing(4)
 
         if show_sender and message.sender_name and not message.outgoing:
-            sender = CaptionLabel(message.sender_name)
+            sender = plain(CaptionLabel(message.sender_name))
             sender.setTextColor(QColor(_tone(message.sender_id or message.chat_id)), QColor(_tone(message.sender_id or message.chat_id)))
             body.addWidget(sender)
 
@@ -370,7 +370,7 @@ class _Bubble(QWidget):
 
         if message.media_kind:
             icon = _MEDIA_ICON.get(message.media_kind, "📎")
-            media = BodyLabel(f"{icon}  {message.media_label}")
+            media = plain(BodyLabel(f"{icon}  {message.media_label}"))
             media.setTextColor(QColor(PALETTE["capture"]), QColor(PALETTE["capture"]))
             body.addWidget(media)
 
@@ -503,8 +503,8 @@ class MessagesPage(PageView):
 
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        self.thread_title = SubtitleLabel("Conversas")
-        self.thread_subtitle = CaptionLabel("Somente leitura, nada é enviado por aqui")
+        self.thread_title = plain(SubtitleLabel("Conversas"))
+        self.thread_subtitle = plain(CaptionLabel("Somente leitura, nada é enviado por aqui"))
         self.thread_subtitle.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
         titles.addWidget(self.thread_title)
         titles.addWidget(self.thread_subtitle)

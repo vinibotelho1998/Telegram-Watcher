@@ -15,7 +15,7 @@ from qfluentwidgets import (
 
 from watcher.models import EngineState
 
-from ..common import PageView, make_vscroll
+from ..common import PageView, make_vscroll, plain
 from ..theme import PALETTE
 from ..widgets import ActivityChart, StatCard, StatusPill
 
@@ -42,8 +42,8 @@ class _FeedRow(QWidget):
 
         time_label = CaptionLabel(data.get("time", ""))
         time_label.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
-        source = StrongBodyLabel(str(data.get("source", "")))
-        text = BodyLabel(str(data.get("text", "")))
+        source = plain(StrongBodyLabel(str(data.get("source", ""))))
+        text = plain(BodyLabel(str(data.get("text", ""))))
         text.setTextColor(QColor(PALETTE["muted"]), QColor(PALETTE["muted"]))
 
         layout.addWidget(dot)
