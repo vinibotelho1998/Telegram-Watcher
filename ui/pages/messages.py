@@ -440,6 +440,8 @@ class MessagesPage(PageView):
         self._last_day: date | None = None
         self._last_sender: int | None = None
         self._loading = False
+        self._reload_pending = False
+        self._stale = False
         self._exhausted = False
         self._searching = False
 
@@ -564,10 +566,13 @@ class MessagesPage(PageView):
     async def _fetch_chats(self) -> None:
         try:
             self._summaries = await self._app.engine.reader.dialogs(_CHAT_LIMIT)
-            self._render_chats()
-            self._app.schedule(self._fetch_avatars())
+        except Exception as exc:
+            self._app.toast(f"Não foi possível carregar as conversas: {exc}", "error")
+            return
         finally:
             self.reload_btn.setEnabled(True)
+        self._render_chats()
+        self._app.schedule(self._fetch_avatars())
 
     async def _fetch_avatars(self) -> None:
         for summary in self._summaries[:_AVATAR_PRELOAD]:
@@ -677,27 +682,38 @@ class MessagesPage(PageView):
 
     async def _fetch_history(self, initial: bool = False) -> None:
         chat_id = self._chat_id
-        if chat_id is None or self._loading:
+        if chat_id is None:
+            return
+        if self._loading:
+            self._reload_pending = self._reload_pending or initial
             return
         self._loading = True
-        anchor = self._scrollbar.maximum() - self._scrollbar.value()
         try:
-            messages = await self._app.engine.reader.history(chat_id, _PAGE_SIZE, self._oldest_id)
-        except Exception as exc:
+            await self._load_history(chat_id, initial)
+        finally:
             self._loading = False
+        if self._reload_pending:
+            self._reload_pending = False
+            self._app.schedule(self._fetch_history(initial=True))
+
+    async def _load_history(self, chat_id: int, initial: bool) -> None:
+        anchor = self._scrollbar.maximum() - self._scrollbar.value()
+        before_id = None if initial else self._oldest_id
+        try:
+            messages = await self._app.engine.reader.history(chat_id, _PAGE_SIZE, before_id)
+        except Exception as exc:
             if self._chat_id == chat_id:
                 self._show_placeholder(f"Não foi possível ler esta conversa: {exc}")
             return
         if self._chat_id != chat_id:
-            self._loading = False
             return
         if initial:
             self._reset_thread()
+            self._exhausted = False
         if not messages:
             self._exhausted = True
             if initial:
                 self._show_placeholder("Nenhuma mensagem nesta conversa.")
-            self._loading = False
             return
         self._oldest_id = messages[0].id
         if initial:
@@ -708,7 +724,6 @@ class MessagesPage(PageView):
             self._scroll_to_end()
         else:
             self._prepend(messages, anchor)
-        self._loading = False
 
     def _prepend(self, messages: list[ChatMessage], anchor: int) -> None:
         block = QWidget()
@@ -823,7 +838,12 @@ class MessagesPage(PageView):
         chat_id = self._chat_id
         if chat_id is None:
             return
-        results = await self._app.engine.reader.search(chat_id, query)
+        try:
+            results = await self._app.engine.reader.search(chat_id, query)
+        except Exception as exc:
+            if self._chat_id == chat_id:
+                self._show_placeholder(f"Não foi possível buscar nesta conversa: {exc}")
+            return
         if self._chat_id != chat_id:
             return
         self._reset_thread()
@@ -848,8 +868,14 @@ class MessagesPage(PageView):
             self._exhausted = False
             self._app.schedule(self._fetch_history(initial=True))
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if self._stale and self._app.engine.reader.available:
+            self._stale = False
+            self.refresh_marks()
+
     def refresh_marks(self) -> None:
-        if self._chat_id is None or self._searching or self._loading:
+        if self._chat_id is None or self._searching:
             return
         self._oldest_id = None
         self._exhausted = False
@@ -867,6 +893,9 @@ class MessagesPage(PageView):
                     summary.date = message.date
                     row.set_unread(summary.unread)
         if chat_id != self._chat_id or self._searching:
+            return
+        if not self.isVisible():
+            self._stale = True
             return
         at_end = self._scrollbar.value() >= self._scrollbar.maximum() - 80
         self._append(message)

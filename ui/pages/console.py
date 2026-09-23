@@ -19,6 +19,8 @@ _FILTERS: list[tuple[str, LogLevel | None]] = [
     ("Erros", LogLevel.ERROR),
 ]
 
+_MAX_LINES = 800
+
 _STYLE = """
 QTextEdit#consoleView {
     background: rgba(0, 0, 0, 0.28);
@@ -52,6 +54,7 @@ class ConsolePage(PageView):
 
         self.view = QTextEdit()
         self.view.setReadOnly(True)
+        self.view.document().setMaximumBlockCount(_MAX_LINES)
         self.view.setObjectName("consoleView")
         self.view.setStyleSheet(_STYLE)
         self.add_body(self.view, 1)
@@ -66,8 +69,8 @@ class ConsolePage(PageView):
     def append(self, message: str, level: LogLevel) -> None:
         timestamp = strftime("%H:%M:%S")
         self._buffer.append((level, timestamp, message))
-        if len(self._buffer) > 800:
-            self._buffer = self._buffer[-800:]
+        if len(self._buffer) > _MAX_LINES:
+            self._buffer = self._buffer[-_MAX_LINES:]
         if self._active is None or self._active == level:
             self.view.append(self._line(level, timestamp, message))
 

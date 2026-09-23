@@ -101,7 +101,17 @@ class SettingsPage(PageView):
         parent_layout.addLayout(row)
         return switch
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not event.spontaneous():
+            self._load_config()
+
     def load(self) -> None:
+        self._load_config()
+        self.sw_startup.setChecked(self._app.is_windows_autostart())
+        self.sw_theme.setChecked(True)
+
+    def _load_config(self) -> None:
         config = self._app.config
         self.api_id.setText(str(config.api_id) if config.api_id else "")
         self.api_hash.setText(config.api_hash)
@@ -109,8 +119,6 @@ class SettingsPage(PageView):
         self.phone.setText(config.phone)
         self.sw_self.setChecked(config.allow_self)
         self.sw_auto.setChecked(config.auto_start)
-        self.sw_startup.setChecked(self._app.is_windows_autostart())
-        self.sw_theme.setChecked(True)
 
     def _save(self) -> None:
         self._app.save_settings(
