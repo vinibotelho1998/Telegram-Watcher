@@ -172,3 +172,174 @@ def test_watch_item_defaults_to_any_store():
 def test_watch_item_legacy_dict_without_store_accepts_all():
     item = WatchItem.from_dict({"id": "w9", "name": "X", "max_price": 10.0, "include": ["ssd"]})
     assert item.store == ""
+
+
+def test_records_ignore_malformed_files(tmp_path, monkeypatch):
+    from watcher.autobuy import records
+
+    monkeypatch.setattr(records.paths, "autobuy_dir", lambda: tmp_path)
+    (tmp_path / "20260101-000000-pix.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "20260101-000001-pix.json").write_text('{"timings": [1, 2]}', encoding="utf-8")
+    records.save_record(BuyResult(status=BuyStatus.PIX_READY, pix_code="00020126x"), "20260708-100000")
+    assert [r.stamp for r in records.load_records()] == ["20260708-100000"]
+
+
+class _FakeBrowser:
+    def __init__(self, tmp_path, monkeypatch, *, clock: float = 10_000.0) -> None:
+        import asyncio
+        import types
+
+        import pytest
+
+        async_api = pytest.importorskip("playwright.async_api")
+        from watcher import paths
+        from watcher.autobuy import browser, registry
+        from watcher.autobuy import manager as manager_module
+        from watcher.autobuy.manager import AutobuyManager
+        from watcher.autobuy.storage import AutobuySettings, AutobuyStore
+
+        self.open_contexts: list[object] = []
+        self.purchases: list[str] = []
+        self.alerts: list[str] = []
+        self.release = asyncio.Event()
+        self.release.set()
+        self.real_sleep = asyncio.sleep
+        fake = self
+
+        class FakePlaywright:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        class FakePage:
+            async def goto(self, *_args, **_kwargs):
+                await fake.release.wait()
+
+            async def evaluate(self, _script):
+                return "Olá, VINICIUS"
+
+        class FakeContext:
+            async def new_page(self):
+                return FakePage()
+
+        async def fake_open_context(_playwright, headless=True):
+            if fake.open_contexts:
+                raise browser.ProfileInUse(browser.PROFILE_BUSY)
+            context = FakeContext()
+            fake.open_contexts.append(context)
+            return context
+
+        async def fake_close_context(context):
+            fake.open_contexts.remove(context)
+
+        class FakeDriver:
+            async def buy(self, url, max_price, **_kwargs):
+                fake.purchases.append(url)
+                return BuyResult(status=BuyStatus.DRY_RUN_OK, detail="ok")
+
+        async def fast_sleep(_delay=0, result=None):
+            await fake.real_sleep(0)
+            return result
+
+        monkeypatch.setattr(paths, "autobuy_dir", lambda: tmp_path)
+        monkeypatch.setattr(async_api, "async_playwright", lambda: FakePlaywright())
+        monkeypatch.setattr(browser, "open_context", fake_open_context)
+        monkeypatch.setattr(browser, "close_context", fake_close_context)
+        monkeypatch.setattr(registry.StoreSpec, "driver", lambda self, context, on_log=None, on_captcha=None: FakeDriver())
+        monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+        monkeypatch.setattr(manager_module, "time", types.SimpleNamespace(monotonic=lambda: clock))
+
+        store = AutobuyStore(tmp_path / "autobuy.json")
+        item = WatchItem(id="w1", name="SSD", max_price=500.0, include=["ssd"], store="kabum")
+        store.save(AutobuySettings(enabled=True), [item])
+        self.manager = AutobuyManager(store, on_alert=self.alerts.append)
+
+    async def wait_idle(self) -> None:
+        for _ in range(200):
+            if not self.manager.busy:
+                return
+            await self.real_sleep(0.01)
+
+
+_PROMO_URL = "https://www.kabum.com.br/produto/123/ssd"
+
+
+def test_manager_waits_for_session_check_before_buying(tmp_path, monkeypatch):
+    import asyncio
+
+    fake = _FakeBrowser(tmp_path, monkeypatch)
+    fake.release.clear()
+
+    async def scenario():
+        check = asyncio.create_task(fake.manager.check_login("kabum"))
+        await fake.real_sleep(0.05)
+        assert fake.manager.handle_text(f"SSD barato {_PROMO_URL}")
+        await fake.real_sleep(0.05)
+        fake.release.set()
+        user = await check
+        await fake.wait_idle()
+        return user
+
+    assert asyncio.run(scenario()) == "VINICIUS"
+    assert fake.purchases == [_PROMO_URL]
+    assert fake.open_contexts == []
+
+
+def test_manager_buys_first_promo_right_after_boot(tmp_path, monkeypatch):
+    import asyncio
+
+    fake = _FakeBrowser(tmp_path, monkeypatch, clock=120.0)
+
+    async def scenario():
+        assert fake.manager.handle_text(f"SSD barato {_PROMO_URL}")
+        await fake.wait_idle()
+        assert fake.manager.handle_text(f"SSD barato de novo {_PROMO_URL}")
+        await fake.wait_idle()
+
+    asyncio.run(scenario())
+    assert fake.purchases == [_PROMO_URL]
+
+
+def test_manager_first_alert_is_not_muted_right_after_boot(tmp_path, monkeypatch):
+    fake = _FakeBrowser(tmp_path, monkeypatch, clock=120.0)
+    fake.manager._alert("kabum", "Sua conta caiu")
+    fake.manager._alert("kabum", "Sua conta caiu de novo")
+    assert fake.alerts == ["Sua conta caiu"]
+
+
+_LINKS_DE_OUTRO_SITE = [
+    "https://golpe.example/kabum.com.br/produto/123",
+    "https://golpe.example/?r=https://www.kabum.com.br/produto/123",
+    "https://www.kabum.com.br@golpe.example/produto/123",
+    "https://golpe.example\\@www.kabum.com.br/produto/123",
+    "https://www.kabum.com.br.golpe.example/produto/123",
+    "https://golpe.example/terabyteshop.com.br/produto/9",
+    "https://golpe.example/amazon.com.br/dp/B0CGBQVDNK",
+]
+
+
+def test_link_de_outro_site_nao_passa_por_loja(monkeypatch):
+    from watcher.autobuy import registry
+
+    monkeypatch.setattr(registry, "resolve", lambda url: url)
+    for link in _LINKS_DE_OUTRO_SITE:
+        assert registry.match_url(link) is None, link
+        assert registry.find_product(f"SSD 2TB barato {link}") is None, link
+    assert product_id("https://golpe.example/kabum.com.br/produto/123") is None
+
+
+def test_links_das_lojas_continuam_reconhecidos():
+    from watcher.autobuy import registry
+
+    casos = {
+        "https://www.kabum.com.br/produto/1000741/placa": "kabum",
+        "https://kabum.com.br/produto/1": "kabum",
+        "HTTPS://WWW.KABUM.COM.BR/produto/7": "kabum",
+        "https://www.terabyteshop.com.br/produto/25639/ssd": "terabyte",
+        "https://www.amazon.com.br/SSD-Kingston/dp/B0CGBQVDNK/ref=sr_1_1?th=1": "amazon",
+        "https://www.amazon.com.br/gp/product/B0C9DWTTQF": "amazon",
+    }
+    for link, loja in casos.items():
+        assert registry.match_url(link).id == loja, link

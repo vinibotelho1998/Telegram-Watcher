@@ -51,6 +51,7 @@ class AutobuyManager:
         self.busy_profile = False
         self._watchdog: asyncio.Task | None = None
         self._last_alert: dict[str, float] = {}
+        self._profile_lock = asyncio.Lock()
 
     def _log(self, message: str, level: LogLevel = LogLevel.INFO) -> None:
         journal.write(message, level.value, self._store_tag)
@@ -177,7 +178,7 @@ class AutobuyManager:
             self._log("Playwright não instalado: pip install -r requirements-autobuy.txt", LogLevel.ERROR)
             return None
         try:
-            async with async_playwright() as playwright:
+            async with self._profile_lock, async_playwright() as playwright:
                 context = await self._context_for(playwright, spec, spec.headless_allowed(True))
                 try:
                     page = await context.new_page()
@@ -226,7 +227,7 @@ class AutobuyManager:
             return None
         self._busy = True
         try:
-            async with async_playwright() as playwright:
+            async with self._profile_lock, async_playwright() as playwright:
                 context = await open_context(playwright, headless=False)
                 page = context.pages[0] if context.pages else await context.new_page()
                 await page.goto(spec.login_url, wait_until="domcontentloaded", timeout=45000)
@@ -273,7 +274,8 @@ class AutobuyManager:
         if self._on_alert is None:
             return
         now = time.monotonic()
-        if now - self._last_alert.get(key, 0.0) < _WATCHDOG_RETRY:
+        last = self._last_alert.get(key)
+        if last is not None and now - last < _WATCHDOG_RETRY:
             return
         self._last_alert[key] = now
         self._on_alert(message)
@@ -332,7 +334,7 @@ class AutobuyManager:
             return None
         self._busy = True
         try:
-            async with async_playwright() as playwright:
+            async with self._profile_lock, async_playwright() as playwright:
                 context = await self._context_for(playwright, spec, spec.headless_allowed(True))
                 try:
                     driver = spec.driver(
@@ -387,7 +389,7 @@ class AutobuyManager:
         self._log(f"Teste iniciado em {mode} na {spec.label}: {url}", LogLevel.CAPTURE)
         self._busy = True
         try:
-            async with async_playwright() as playwright:
+            async with self._profile_lock, async_playwright() as playwright:
                 context = await self._context_for(playwright, spec, spec.headless_allowed(headless))
                 try:
                     driver = spec.driver(
@@ -437,8 +439,8 @@ class AutobuyManager:
         spec, url = found
         self._log(f"Loja identificada: {spec.label}", LogLevel.INFO)
         key = f"{spec.id}:{url}"
-        last = self._recent.get(key, 0.0)
-        if time.monotonic() - last < _REBUY_COOLDOWN:
+        last = self._recent.get(key)
+        if last is not None and time.monotonic() - last < _REBUY_COOLDOWN:
             self._log("Produto já tratado há pouco, ignorando repetição", LogLevel.INFO)
             return None
         self._recent[key] = time.monotonic()
@@ -456,7 +458,7 @@ class AutobuyManager:
         self._store_tag = spec.id
         journal.separator(f"PROMO CAPTURADA -> {mode.upper()} na {spec.label}: {url[:60]}")
         self._log(f"Iniciando {mode} na {spec.label}: {url}", LogLevel.INFO)
-        async with async_playwright() as playwright:
+        async with self._profile_lock, async_playwright() as playwright:
             context = await self._context_for(playwright, spec, spec.headless_allowed(self.settings.headless))
             try:
                 driver = spec.driver(
