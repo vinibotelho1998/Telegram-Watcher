@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from .. import paths
 from .models import BuyResult
+
+_STAMP = re.compile(r"\d{8}-\d{6}")
 
 
 @dataclass(slots=True)
@@ -90,7 +93,7 @@ def save_record(result: BuyResult, stamp: str | None = None, store: str = "") ->
 
 
 def delete_record(stamp: str) -> int:
-    if not stamp:
+    if not stamp or not _STAMP.fullmatch(stamp):
         return 0
     removed = 0
     for path in paths.autobuy_dir().glob(f"{stamp}-*"):
@@ -107,7 +110,7 @@ def load_records(limit: int = 50, store: str = "") -> list[PixRecord]:
     for path in paths.autobuy_dir().glob("*-pix.json"):
         try:
             records.append(PixRecord.from_dict(json.loads(path.read_text(encoding="utf-8"))))
-        except (json.JSONDecodeError, OSError, ValueError):
+        except (json.JSONDecodeError, OSError, ValueError, AttributeError, TypeError):
             continue
     if store:
         records = [record for record in records if record.store == store]

@@ -141,6 +141,8 @@ class KabumDriver:
         prices = product.get("prices") or {}
         card_price = float(prices.get("price") or product.get("price") or 0.0)
         pix_price = float(prices.get("priceWithDiscount") or 0.0) or card_price
+        if pix_price <= 0:
+            return None
         return ProductInfo(
             id=int(product["id"]),
             title=str(product.get("title") or ""),
@@ -504,8 +506,11 @@ class KabumDriver:
             elapsed=round(stopwatch.total(), 1),
             timings=dict(stopwatch.laps),
         )
-        save_record(result, stamp, STORE_ID)
-        self._save_pix(product, code, stamp)
+        try:
+            save_record(result, stamp, STORE_ID)
+            self._save_pix(product, code, stamp)
+        except OSError as exc:
+            self._log(f"Não consegui gravar o registro do PIX em disco: {exc}")
         self._log("Código PIX capturado")
         return result
 

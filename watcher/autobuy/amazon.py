@@ -69,6 +69,7 @@ _CHANGE_PAYMENT = (
     r"^\s*alterar\s*$",
 )
 _CARD_WORDS = ("cartao", "credito", "mastercard", "visa", "elo", "american express", "nupay", "boleto")
+_CARD_WORD = re.compile(r"(?<![a-z])(?:" + "|".join(map(re.escape, _CARD_WORDS)) + r")s?(?![a-z])")
 _CAPTCHA_HINTS = ("digite os caracteres", "not a robot", "sou um rob", "enter the characters")
 
 _MAX_STEPS = 14
@@ -94,7 +95,12 @@ def _slug(value: str) -> str:
 
 
 def _to_float(raw: str) -> float:
-    digits = re.sub(r"[^\d,.]", "", raw or "").replace(".", "").replace(",", ".")
+    digits = re.sub(r"[^\d,.]", "", raw or "")
+    cents = re.search(r"[.,](\d{1,2})$", digits)
+    if cents:
+        digits = re.sub(r"[.,]", "", digits[: cents.start()]) + "." + cents.group(1)
+    else:
+        digits = re.sub(r"[.,]", "", digits)
     try:
         return float(digits)
     except ValueError:
@@ -488,7 +494,7 @@ class AmazonDriver:
 
     async def _payment_is_pix(self, page: Page, button_label: str) -> bool:
         label = normalize(button_label)
-        if any(word in label for word in _CARD_WORDS):
+        if _CARD_WORD.search(label):
             return False
         if "pix" in label:
             return True
@@ -551,8 +557,11 @@ class AmazonDriver:
             elapsed=round(stopwatch.total(), 1),
             timings=dict(stopwatch.laps),
         )
-        save_record(result, stamp, STORE_ID)
-        self._save_pix(product, code, stamp)
+        try:
+            save_record(result, stamp, STORE_ID)
+            self._save_pix(product, code, stamp)
+        except OSError as exc:
+            self._log(f"Não consegui gravar o registro do PIX em disco: {exc}")
         self._log("Código PIX capturado")
         return result
 

@@ -49,6 +49,7 @@ _CAPTCHA_HINTS = ("verificando seu navegador", "checking your browser", "verific
 
 _MAX_STEPS = 12
 _HUMAN_WAIT_SECONDS = 180.0
+_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+")
 
 
 def product_id(url: str) -> int | None:
@@ -77,6 +78,8 @@ def _to_float(raw: str) -> float:
     digits = re.sub(r"[^\d,.]", "", raw or "")
     if "," in digits:
         digits = digits.replace(".", "").replace(",", ".")
+    elif _THOUSANDS.fullmatch(digits):
+        digits = digits.replace(".", "")
     try:
         return float(digits)
     except ValueError:
@@ -356,7 +359,7 @@ class TerabyteDriver:
         from .records import save_record
 
         stamp = time.strftime("%Y%m%d-%H%M%S")
-        shot = await self._screenshot(page, "pix-print", full_page=True)
+        shot = await self._screenshot(page, "pix-print", stamp=stamp, full_page=True)
         result = BuyResult(
             status=BuyStatus.PIX_READY,
             product=product,
@@ -366,11 +369,14 @@ class TerabyteDriver:
             elapsed=round(stopwatch.total(), 1),
             timings=dict(stopwatch.laps),
         )
-        save_record(result, stamp, STORE_ID)
-        path = paths.autobuy_dir() / f"{stamp}-pix-{_slug(product.title)}.txt"
-        path.write_text(
-            f"{product.title}\nR$ {product.pix_price:.2f}\n{product.url}\n\n{code}\n", encoding="utf-8"
-        )
+        try:
+            save_record(result, stamp, STORE_ID)
+            path = paths.autobuy_dir() / f"{stamp}-pix-{_slug(product.title)}.txt"
+            path.write_text(
+                f"{product.title}\nR$ {product.pix_price:.2f}\n{product.url}\n\n{code}\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            self._log(f"Não consegui gravar o registro do PIX em disco: {exc}")
         self._log("Código PIX capturado")
         return result
 
@@ -444,8 +450,8 @@ class TerabyteDriver:
                 return True
         return False
 
-    async def _screenshot(self, page: Page, tag: str, full_page: bool = False) -> str:
-        stamp = time.strftime("%Y%m%d-%H%M%S")
+    async def _screenshot(self, page: Page, tag: str, stamp: str | None = None, full_page: bool = False) -> str:
+        stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
         path = paths.autobuy_dir() / f"{stamp}-terabyte-{_slug(tag)}.png"
         try:
             await page.screenshot(path=str(path), full_page=full_page)

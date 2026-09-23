@@ -10,6 +10,8 @@ from .dom import find_clickable, page_text
 
 _PIX_CODE = re.compile(r"000201.{20,600}?6304[0-9A-Za-z]{4}", re.DOTALL)
 _PIX_MARKER = "bcb.pix"
+_CRC_FIELD = re.compile(r"(?=6304([0-9A-Fa-f]{4}))")
+_MAX_PIX_LENGTH = 640
 _COPY_PATTERNS = (
     r"copiar\s+c[oó]digo\s+pix",
     r"copiar\s+c[oó]digo",
@@ -20,13 +22,33 @@ _COPY_PATTERNS = (
 WAIT_SECONDS = 90.0
 
 
+def _crc16(payload: str) -> str:
+    crc = 0xFFFF
+    for byte in payload.encode("utf-8"):
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else crc << 1
+            crc &= 0xFFFF
+    return f"{crc:04X}"
+
+
+def _with_valid_crc(raw: str, start: int) -> str:
+    window = raw[start : start + _MAX_PIX_LENGTH * 4]
+    for tail in (re.sub(r"[\r\n]+", "", window), re.sub(r"\s+", "", window)):
+        for end in _CRC_FIELD.finditer(tail, 0, _MAX_PIX_LENGTH):
+            candidate = tail[: end.start() + 8]
+            if _crc16(candidate[:-4]) == end.group(1).upper():
+                return candidate
+    return ""
+
+
 def clean_pix(raw: str) -> str:
     if not raw:
         return ""
     match = _PIX_CODE.search(raw)
     if not match:
         return ""
-    code = re.sub(r"[\r\n\s]+", "", match.group(0)).strip()
+    code = _with_valid_crc(raw, match.start()) or re.sub(r"[\r\n\s]+", "", match.group(0)).strip()
     return code if _PIX_MARKER in code.lower() else ""
 
 

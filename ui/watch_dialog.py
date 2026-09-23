@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from PyQt6.QtWidgets import QGridLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -29,11 +31,15 @@ _EXAMPLE = (
     "https://www.kabum.com.br/produto/123456/ssd-kingston-nv2-2tb"
 )
 
+_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+")
+
 
 def parse_price(text: str) -> float:
     clean = text.replace("R$", "").strip()
     if "," in clean:
         clean = clean.replace(".", "").replace(",", ".")
+    elif _THOUSANDS.fullmatch(clean):
+        clean = clean.replace(".", "")
     try:
         return float(clean)
     except ValueError:
