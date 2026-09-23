@@ -307,18 +307,18 @@ def test_texto_vindo_do_telegram_nao_vira_html(qapp, tmp_path, monkeypatch):
         widget.deleteLater()
 
 
-def test_registro_de_pix_com_texto_da_loja_nao_vira_html(qapp, tmp_path):
+def test_registro_de_pix_com_texto_da_loja_nao_vira_html(qapp, tmp_path, monkeypatch):
     pytest.importorskip("playwright.async_api")
     from PyQt6.QtGui import QColor, QImage
 
     from ui.pages.autobuy import AutobuyPage
     from watcher.autobuy.records import PixRecord
 
-    imagem = tmp_path / "isca.png"
+    monkeypatch.chdir(tmp_path)
     quadro = QImage(300, 300, QImage.Format.Format_RGB32)
     quadro.fill(QColor("red"))
-    quadro.save(str(imagem))
-    isca = f'<img src="{imagem.as_uri()}">'
+    quadro.save("isca.png")
+    isca = "<img src=isca.png>"
 
     pagina = AutobuyPage(None)
     pagina._set_test_status("kabum", f"{isca} — à vista no PIX R$ 10,00", "success")
