@@ -1144,3 +1144,366 @@ def test_terabyte_erro_inesperado_vira_falha_e_fecha_a_pagina(sem_espera):
     resultado = asyncio.run(terabyte.TerabyteDriver(Contexto()).buy(_TERABYTE, 500.0))
     assert resultado.status == BuyStatus.FAILED and resultado.detail == "navegador fechou"
     assert pagina.fechada and resultado.screenshot == ""
+
+
+def test_amazon_recusa_o_prime_escolhe_pix_confirma_o_pagamento_e_para_na_revisao(sem_espera):
+    pagina = _Pagina(_PAGAMENTO_AMAZON, "Escolha a forma de pagamento")
+    logs: list[str] = []
+
+    def recusou():
+        del pagina.botoes["Não, obrigado"]
+
+    def confirmou():
+        pagina.url = "https://www.amazon.com.br/checkout/p/p-1/spc"
+        pagina.seletores["#placeOrder"] = [finalizar]
+
+    prime = _Elemento("Não, obrigado", recusou)
+    radio = _Elemento("pix")
+    usar = _Elemento("Usar este método de pagamento", confirmou)
+    finalizar = _Elemento("Confirmar pedido")
+    pagina.botoes["Não, obrigado"] = prime
+    pagina.seletores[amazon._PIX_RADIO] = [radio]
+    pagina.seletores[amazon._USE_PAYMENT[0]] = [usar]
+    driver = amazon.AmazonDriver(None, on_log=logs.append)
+    resultado = asyncio.run(driver._checkout(pagina, _produto("amazon"), False, amazon._Stopwatch()))
+    assert resultado.status == BuyStatus.DRY_RUN_OK
+    assert (prime.cliques, radio.cliques, usar.cliques, finalizar.cliques) == (1, 1, 1, 0)
+    assert "Oferta do Prime recusada" in logs and "Forma de pagamento PIX selecionada" in logs
+    assert logs.index("Etapa: pagamento") < logs.index("Etapa: revisao")
+
+
+def test_amazon_travado_no_checkout_conta_a_etapa_e_os_botoes_da_tela(sem_espera):
+    from watcher.autobuy.models import CHECKOUT_STUCK
+
+    pagina = _Pagina(_PAGAMENTO_AMAZON)
+    passos = [0]
+
+    async def carregou(*_args, **_kwargs):
+        passos[0] += 1
+
+    async def le(script):
+        return ["Voltar", "Ajuda"] if "querySelectorAll('button" in script else "Forma de pagamento"
+
+    pagina.wait_for_load_state = carregou
+    pagina.evaluate = le
+    resultado = asyncio.run(amazon.AmazonDriver(None)._checkout(pagina, _produto("amazon"), True, amazon._Stopwatch()))
+    assert resultado.status == BuyStatus.BLOCKED
+    assert resultado.detail == f"{CHECKOUT_STUCK} (etapa 'pagamento'); botões na tela: Voltar | Ajuda"
+    assert passos[0] == amazon._MAX_STEPS
+
+
+def test_amazon_pedido_finalizado_sem_codigo_avisa_para_conferir(sem_espera):
+    resultado, finalizar = _amazon_na_revisao("Confirmar pedido com Pix", confirm=True, depois_de_finalizar="Processando")
+    assert resultado.status == BuyStatus.FAILED and "confira" in resultado.detail
+    assert finalizar.cliques == 1
+
+
+def test_amazon_codigo_ja_na_tela_nao_finaliza_de_novo(sem_espera):
+    resultado, finalizar = _amazon_na_revisao("Confirmar pedido com Pix", confirm=True, corpo=f"Pedido feito\n{_PIX}")
+    assert resultado.status == BuyStatus.PIX_READY and resultado.pix_code == _PIX
+    assert finalizar.cliques == 0
+
+
+def test_amazon_simulacao_leva_o_resultado_do_cupom_no_detalhe(sem_espera):
+    pagina = _Pagina("https://www.amazon.com.br/checkout/p/p-1/spc", "Desconto aplicado")
+    pagina.seletores["#placeOrder"] = [_Elemento("Confirmar pedido com Pix")]
+    pagina.seletores[amazon._COUPON_FIELD] = [_Campo()]
+    pagina.seletores[amazon._COUPON_APPLY] = [_Elemento("Aplicar")]
+    driver = amazon.AmazonDriver(None)
+    driver._coupon = "PRIME10"
+    resultado = asyncio.run(driver._checkout(pagina, _produto("amazon"), False, amazon._Stopwatch()))
+    assert resultado.status == BuyStatus.DRY_RUN_OK
+    assert resultado.detail.endswith("; Cupom PRIME10 aplicado")
+
+
+def test_amazon_troca_a_forma_de_pagamento_so_fora_da_tela_de_pagamento(sem_espera):
+    revisao = _Pagina("https://www.amazon.com.br/checkout/p/p-1/spc")
+    trocar = _Elemento("Pagando com Visa")
+    revisao.botoes["Pagando com Visa"] = trocar
+    assert asyncio.run(amazon.AmazonDriver(None)._select_pix(revisao)) is True
+    assert trocar.cliques == 1
+    pagamento = _Pagina(_PAGAMENTO_AMAZON)
+    outro = _Elemento("Pagando com Visa")
+    pagamento.botoes["Pagando com Visa"] = outro
+    assert asyncio.run(amazon.AmazonDriver(None)._select_pix(pagamento)) is False
+    assert outro.cliques == 0
+    assert asyncio.run(amazon.AmazonDriver(None)._select_pix(_Pagina("https://www.amazon.com.br/checkout/p/p-1/spc"))) is False
+
+
+def test_amazon_confirma_o_pagamento_pelo_texto_do_botao(sem_espera):
+    pagina = _Pagina(_PAGAMENTO_AMAZON)
+    continuar = _Elemento("Continuar")
+    pagina.botoes["Continuar"] = continuar
+    pagina.botoes["Continuar comprando"] = _Elemento("Continuar comprando")
+    assert asyncio.run(amazon.AmazonDriver(None)._confirm_payment(pagina)) is True
+    assert continuar.cliques == 1
+    so_voltar = _Pagina(_PAGAMENTO_AMAZON)
+    voltar = _Elemento("Continuar comprando")
+    so_voltar.botoes["Continuar comprando"] = voltar
+    assert asyncio.run(amazon.AmazonDriver(None)._confirm_payment(so_voltar)) is False
+    assert voltar.cliques == 0
+
+
+def test_amazon_login_e_captcha_reconhecidos_pelo_formulario(sem_espera):
+    driver = amazon.AmazonDriver(None)
+    senha = _Pagina(_PAGAMENTO_AMAZON, seletores={"#ap_password": [_Elemento("senha")]})
+    assert asyncio.run(driver._needs_login(senha)) is True
+    assert asyncio.run(driver._needs_login(_Pagina(_PAGAMENTO_AMAZON))) is False
+    formulario = _Pagina(_PAGAMENTO_AMAZON, seletores={"form[action*='validateCaptcha']": [_Elemento("form")]})
+    assert asyncio.run(driver._captcha_present(formulario)) is True
+    assert asyncio.run(driver._captcha_present(_Pagina(_PAGAMENTO_AMAZON, "Revisar pedido"))) is False
+
+
+def test_amazon_captcha_com_janela_espera_a_pessoa_ate_o_prazo(sem_espera, monkeypatch):
+    import itertools
+    import time
+    import types
+
+    relogio = itertools.count(0, 50)
+    monkeypatch.setattr(amazon, "time", types.SimpleNamespace(monotonic=lambda: next(relogio), strftime=time.strftime))
+    avisos: list[int] = []
+
+    def aviso_quebrado():
+        avisos.append(1)
+        raise RuntimeError("bandeja fora")
+
+    pagina = _Pagina(_PAGAMENTO_AMAZON, "Digite os caracteres que você vê abaixo")
+    leituras = [0]
+
+    async def le(_script):
+        leituras[0] += 1
+        return "Revisar pedido" if leituras[0] >= 3 else pagina.corpo
+
+    pagina.evaluate = le
+    logs: list[str] = []
+    driver = amazon.AmazonDriver(None, on_log=logs.append, on_captcha=aviso_quebrado)
+    assert asyncio.run(driver._handle_captcha(pagina)) is True
+    assert avisos == [1] and leituras[0] == 3
+    assert logs[-1] == "Captcha resolvido, retomando o checkout"
+    preso = _Pagina(_PAGAMENTO_AMAZON, "Digite os caracteres que você vê abaixo")
+    assert asyncio.run(amazon.AmazonDriver(None)._handle_captcha(preso)) is False
+
+
+@pytest.mark.parametrize(
+    "url, etapa",
+    [
+        ("https://www.amazon.com.br/dp/B0CGBQVDNK", "produto"),
+        ("https://www.amazon.com.br/checkout/p/p-1/pip?x=1", "prime"),
+        ("https://www.amazon.com.br/checkout/p/p-1/spc/", "revisao"),
+        ("https://www.amazon.com.br/checkout/p/p-1/pay", "pagamento"),
+        ("https://www.amazon.com.br/checkout/p/p-1/address", "address"),
+    ],
+)
+def test_amazon_nome_da_etapa_pelo_endereco(url, etapa):
+    assert amazon.AmazonDriver._step_name(url) == etapa
+
+
+def test_amazon_quantidade_sem_opcao_numerica_segue_com_uma(sem_espera):
+    class Seletor:
+        async def count(self):
+            return 1
+
+        async def evaluate(self, _script):
+            return ["", "mais"]
+
+        @property
+        def first(self):
+            return self
+
+    pagina = _Pagina(_ASIN)
+    pagina.locator = lambda _seletor, has_text=None: Seletor()
+    logs: list[str] = []
+    driver = amazon.AmazonDriver(None, on_log=logs.append)
+    driver._quantity = 4
+    asyncio.run(driver._set_quantity(pagina))
+    assert logs == ["Não consegui ajustar a quantidade, seguindo com 1 (pedido: 4)"]
+
+
+def test_amazon_compra_sem_botao_comprar_agora_bloqueia_e_fecha_a_pagina(sem_espera):
+    produto = ProductInfo(id=1, title="SSD", url=_ASIN, pix_price=300.0, card_price=320.0, available=True)
+    pagina = _Pagina(_ASIN)
+
+    class Contexto:
+        async def new_page(self):
+            return pagina
+
+    driver = amazon.AmazonDriver(Contexto())
+
+    async def le(_page, _url):
+        return produto
+
+    driver.fetch_product = le
+    resultado = asyncio.run(driver.buy(_ASIN, 500.0, confirm=True))
+    assert resultado.status == BuyStatus.BLOCKED and resultado.detail == "Botão 'Comprar agora' não encontrado"
+    assert pagina.fechada and "produto" in resultado.timings
+
+
+def test_amazon_tempo_esgotado_vira_falha_com_motivo(sem_espera):
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+
+    pagina = _Pagina(_ASIN)
+
+    class Contexto:
+        async def new_page(self):
+            return pagina
+
+    async def lento(*_args, **_kwargs):
+        raise PlaywrightTimeout("Timeout 45000ms exceeded")
+
+    pagina.goto = lento
+    resultado = asyncio.run(amazon.AmazonDriver(Contexto()).buy(_ASIN, 500.0))
+    assert resultado.status == BuyStatus.FAILED and resultado.detail == "Tempo esgotado: Timeout 45000ms exceeded"
+    assert pagina.fechada
+
+
+def test_amazon_codigo_capturado_mesmo_sem_conseguir_gravar_em_disco(sem_espera, monkeypatch):
+    def disco_cheio(*_args, **_kwargs):
+        raise OSError(28, "sem espaço")
+
+    monkeypatch.setattr(amazon, "save_record", disco_cheio)
+    logs: list[str] = []
+    driver = amazon.AmazonDriver(None, on_log=logs.append)
+    pagina = _Pagina("https://www.amazon.com.br/checkout/p/p-1/spc", f"Pedido feito\n{_PIX}")
+    resultado = asyncio.run(driver._checkout(pagina, _produto("amazon"), True, amazon._Stopwatch()))
+    assert resultado.status == BuyStatus.PIX_READY and resultado.pix_code == _PIX
+    assert any(log.startswith("Não consegui gravar o registro do PIX em disco") for log in logs)
+    assert logs[-1] == "Código PIX capturado"
+
+
+def _run_kabum(sai_do_pre_carrinho=True):
+    produto = ProductInfo(id=1, title="SSD", url="https://www.kabum.com.br/produto/1/ssd", pix_price=300.0, card_price=320.0, available=True)
+    pagina = _Pagina(produto.url)
+    cliques: list[str] = []
+    chamadas: list[str] = []
+
+    async def clicou(seletor, **_kwargs):
+        cliques.append(seletor)
+        pagina.url = "https://www.kabum.com.br/precarrinho/1"
+
+    async def esperou(*_args, **_kwargs):
+        return None
+
+    pagina.click = clicou
+    pagina.wait_for_url = esperou
+    driver = kabum.KabumDriver(None)
+
+    async def le(_page, _url):
+        return produto
+
+    async def sai(_page):
+        chamadas.append("pre-carrinho")
+        return sai_do_pre_carrinho
+
+    async def fecha(*_args):
+        chamadas.append("checkout")
+        return BuyResult(status=BuyStatus.DRY_RUN_OK, product=produto)
+
+    driver.fetch_product = le
+    driver._leave_precart = sai
+    driver._checkout = fecha
+    resultado = asyncio.run(driver._run(pagina, produto.url, 500.0, 0.0, True, kabum._Stopwatch()))
+    return resultado, cliques, chamadas
+
+
+def test_kabum_compra_passa_pelo_pre_carrinho_antes_do_checkout(sem_espera):
+    resultado, cliques, chamadas = _run_kabum()
+    assert resultado.status == BuyStatus.DRY_RUN_OK
+    assert cliques == ["#purchase"] and chamadas == ["pre-carrinho", "checkout"]
+    resultado, cliques, chamadas = _run_kabum(sai_do_pre_carrinho=False)
+    assert resultado.status == BuyStatus.BLOCKED and resultado.detail == "Não consegui sair do pré-carrinho"
+    assert chamadas == ["pre-carrinho"]
+
+
+def test_kabum_codigo_ja_no_carrinho_vira_pix_sem_avancar(sem_espera):
+    avancar = _Elemento("Continuar")
+    pagina = _Pagina(_CARRINHO, f"Pedido feito\n{_PIX}", botoes={"Continuar": avancar})
+    resultado = asyncio.run(kabum.KabumDriver(None)._checkout(pagina, _produto(), True, kabum._Stopwatch()))
+    assert resultado.status == BuyStatus.PIX_READY and resultado.pix_code == _PIX
+    assert avancar.cliques == 0
+
+
+def test_kabum_captcha_com_navegador_oculto_bloqueia_o_checkout(sem_espera):
+    from watcher.autobuy.models import HIDDEN_CAPTCHA
+
+    avancar = _Elemento("Continuar")
+    pagina = _Pagina(_CARRINHO, seletores={_DESAFIO: [_Quadro(400, 580)]}, botoes={"Continuar": avancar})
+    driver = kabum.KabumDriver(None, headless=True)
+    resultado = asyncio.run(driver._checkout(pagina, _produto(), True, kabum._Stopwatch()))
+    assert resultado.status == BuyStatus.BLOCKED and resultado.detail == HIDDEN_CAPTCHA
+    assert avancar.cliques == 0
+
+
+def test_kabum_avancando_sem_sair_do_lugar_desiste_no_limite_de_passos(sem_espera):
+    from watcher.autobuy.models import CHECKOUT_STUCK
+
+    avancar = _Elemento("Continuar")
+    pagina = _Pagina("https://www.kabum.com.br/endereco", "Escolha o endereço", botoes={"Continuar": avancar})
+    resultado = asyncio.run(kabum.KabumDriver(None)._checkout(pagina, _produto(), True, kabum._Stopwatch()))
+    assert resultado.status == BuyStatus.BLOCKED and resultado.detail == CHECKOUT_STUCK
+    assert avancar.cliques == kabum._MAX_CHECKOUT_STEPS
+
+
+def test_kabum_login_reconhecido_pela_senha_ou_pelo_texto(sem_espera):
+    driver = kabum.KabumDriver(None)
+    senha = _Pagina(_CARRINHO, seletores={"input[type='password']": [_Elemento("senha")]})
+    assert asyncio.run(driver._needs_login(senha)) is True
+    assert asyncio.run(driver._needs_login(_Pagina(_CARRINHO, "Acesse sua conta para continuar"))) is True
+    assert asyncio.run(driver._needs_login(_Pagina(_CARRINHO, "Resumo do pedido"))) is False
+
+
+def test_kabum_escolhe_pix_so_na_tela_de_pagamento(sem_espera):
+    logs: list[str] = []
+    opcao = _Elemento("PIX")
+    pagina = _Pagina("https://www.kabum.com.br/pagamento", seletores={"#paymentPage button": [opcao]})
+    asyncio.run(kabum.KabumDriver(None, on_log=logs.append)._select_pix_option(pagina))
+    assert opcao.cliques == 1 and logs == ["Forma de pagamento PIX selecionada"]
+    pelo_papel = _Elemento("Pix")
+    pagina = _Pagina("https://www.kabum.com.br/pagamento", botoes={"Pix": pelo_papel})
+    asyncio.run(kabum.KabumDriver(None)._select_pix_option(pagina))
+    assert pelo_papel.cliques == 1
+    fora = _Elemento("PIX")
+    asyncio.run(kabum.KabumDriver(None)._select_pix_option(_Pagina(_CARRINHO, seletores={"#paymentPage button": [fora]})))
+    assert fora.cliques == 0
+
+
+def test_kabum_pagamento_so_e_pix_quando_aparece_depois_da_forma_de_pagamento(sem_espera):
+    driver = kabum.KabumDriver(None)
+    assert asyncio.run(driver._payment_is_pix(_Pagina(_CARRINHO, "Pague com PIX e ganhe desconto"))) is False
+    assert asyncio.run(driver._payment_is_pix(_Pagina(_CARRINHO, "Forma de pagamento\nPIX"))) is True
+
+    quebrada = _Pagina(_CARRINHO)
+
+    async def caiu(_script):
+        raise RuntimeError("página fechou")
+
+    quebrada.evaluate = caiu
+    assert asyncio.run(driver._payment_is_pix(quebrada)) is False
+
+
+def test_kabum_fecha_o_aviso_de_cookies_uma_vez(sem_espera):
+    recusar = _Elemento("Rejeitar")
+    aceitar = _Elemento("Aceitar")
+    pagina = _Pagina(_CARRINHO, seletores={"#adopt-reject-all-button": [recusar], "#adopt-accept-all-button": [aceitar]})
+    asyncio.run(kabum.KabumDriver(None)._dismiss_consent(pagina))
+    assert (recusar.cliques, aceitar.cliques) == (1, 0)
+
+
+def test_kabum_espera_a_pagina_sair_do_carregando(sem_espera, monkeypatch):
+    import itertools
+    import types
+
+    relogio = itertools.count(0, 1)
+    monkeypatch.setattr(kabum, "time", types.SimpleNamespace(monotonic=lambda: next(relogio)))
+    pagina = _Pagina(_CARRINHO)
+    leituras = [0]
+
+    async def le(_script):
+        leituras[0] += 1
+        return "Carregando..." if leituras[0] < 4 else "Resumo"
+
+    pagina.evaluate = le
+    asyncio.run(kabum.KabumDriver(None)._wait_page_ready(pagina))
+    assert leituras[0] == 4
+    leituras[0] = -100
+    asyncio.run(kabum.KabumDriver(None)._wait_page_ready(pagina, timeout=5))
+    assert leituras[0] < 0

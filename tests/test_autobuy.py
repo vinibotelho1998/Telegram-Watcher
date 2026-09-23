@@ -1161,3 +1161,79 @@ def test_alerta_da_mesma_loja_volta_depois_de_15_minutos(tmp_path, monkeypatch):
     manager._alert("kabum", "caiu 3")
     assert alertas == ["caiu 1", "caiu a", "caiu 3"]
     AutobuyManager(manager._store)._alert("kabum", "sem ninguém ouvindo")
+
+
+def test_teste_ao_vivo_manda_o_link_canonico_e_as_escolhas_para_a_loja(tmp_path, monkeypatch):
+    import asyncio
+
+    from watcher.autobuy import registry
+    from watcher.models import LogLevel
+
+    fake = _FakeBrowser(tmp_path, monkeypatch)
+    chamadas: list[tuple] = []
+
+    class Driver:
+        def __init__(self, headless):
+            self.headless = headless
+
+        async def buy(self, url, max_price, **kwargs):
+            chamadas.append((url, max_price, kwargs, self.headless))
+            return BuyResult(status=BuyStatus.DRY_RUN_OK, detail="parado na revisão")
+
+    monkeypatch.setattr(registry.StoreSpec, "driver", lambda self, context, headless=False, **_kwargs: Driver(headless))
+    logs: list[tuple[str, object]] = []
+    fake.manager._on_log_ui = lambda mensagem, nivel: logs.append((mensagem, nivel))
+    link = "https://www.amazon.com.br/SSD-Kingston/dp/B0CGBQVDNK/ref=sr_1_1?th=1"
+    resultado = asyncio.run(
+        fake.manager.run_test(link, 350.0, confirm=True, coupon="PRIME10", min_price=100.0, quantity=2, headless=True)
+    )
+    assert resultado.status == BuyStatus.DRY_RUN_OK
+    assert chamadas == [(
+        "https://www.amazon.com.br/dp/B0CGBQVDNK",
+        350.0,
+        {"confirm": True, "coupon": "PRIME10", "min_price": 100.0, "quantity": 2},
+        True,
+    )]
+    assert logs[-1][1] == LogLevel.SUCCESS and "parado na revisão" in logs[-1][0]
+    assert fake.manager.busy is False and fake.open_contexts == []
+    asyncio.run(fake.manager.run_test("https://www.terabyteshop.com.br/produto/25639/ssd", 350.0, headless=True))
+    assert chamadas[-1][3] is False
+
+
+def test_teste_ao_vivo_que_nao_compra_termina_como_aviso(tmp_path, monkeypatch):
+    import asyncio
+
+    from watcher.autobuy import registry
+    from watcher.models import LogLevel
+
+    fake = _FakeBrowser(tmp_path, monkeypatch)
+
+    class Driver:
+        async def buy(self, url, max_price, **_kwargs):
+            return BuyResult(status=BuyStatus.PRICE_ABOVE_LIMIT, detail="R$ 400.00 acima do limite R$ 350.00")
+
+    monkeypatch.setattr(registry.StoreSpec, "driver", lambda self, context, **_kwargs: Driver())
+    logs: list[tuple[str, object]] = []
+    fake.manager._on_log_ui = lambda mensagem, nivel: logs.append((mensagem, nivel))
+    resultado = asyncio.run(fake.manager.run_test(_PROMO_URL, 350.0))
+    assert resultado.status == BuyStatus.PRICE_ABOVE_LIMIT
+    assert logs[-1][1] == LogLevel.WARNING and "acima do limite" in logs[-1][0]
+
+
+def test_verificar_todas_as_contas_passa_por_cada_loja_sem_abrir_a_fundo(tmp_path, monkeypatch):
+    import asyncio
+
+    from watcher.autobuy import registry
+
+    fake = _FakeBrowser(tmp_path, monkeypatch)
+    vistos: list[tuple[str, bool]] = []
+
+    async def confere(store_id, deep=True):
+        vistos.append((store_id, deep))
+        fake.manager.accounts[store_id] = "VINICIUS" if store_id == "kabum" else None
+        return fake.manager.accounts[store_id]
+
+    fake.manager.check_login = confere
+    contas = asyncio.run(fake.manager.check_all())
+    assert vistos == [(spec.id, False) for spec in registry.all_stores()]
+    assert contas["kabum"] == "VINICIUS" and contas["amazon"] is None

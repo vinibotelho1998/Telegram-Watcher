@@ -2234,3 +2234,43 @@ def test_bandeja_abre_no_clique_duplo_e_aviso_que_falha_nao_derruba(qapp):
     bandeja.showMessage = sem_bandeja
     bandeja.notify("Telegram Watcher", "Conta caiu")
     bandeja.deleteLater()
+
+
+def test_pagina_de_filtros_vazia_explica_e_avisa_quando_replica_tudo(qapp):
+    from ui.pages.filters import REPLICA_TUDO, FiltersPage
+
+    app, pagina = _pagina_de_filtros([], True)
+    textos = [w.text() for w in pagina.findChildren(QLabel)]
+    assert "Nenhum filtro ainda" in textos and REPLICA_TUDO in textos
+    pagina.deleteLater()
+    app.config.destination_ids = []
+    sem_destino = FiltersPage(app)
+    textos = [w.text() for w in sem_destino.findChildren(QLabel)]
+    assert "Nenhum filtro ainda" in textos and REPLICA_TUDO not in textos
+    sem_destino.deleteLater()
+
+
+def test_cartao_do_filtro_avisa_o_que_ele_replica_e_liga_os_botoes(qapp):
+    from qfluentwidgets import TransparentToolButton
+
+    from ui.pages.filters import _FilterCard
+    from watcher.models import Filter
+
+    filtros = [
+        Filter.from_dict({"id": "a", "name": "Bloqueio", "exclude": ["shein"]}),
+        Filter.from_dict({"id": "b", "name": "SSD", "include": ["ssd"]}),
+    ]
+    app, pagina = _pagina_de_filtros(filtros, True)
+    editados: list[object] = []
+    apagados: list[str] = []
+    app.open_filter_editor = editados.append
+    app.delete_filter = apagados.append
+    cartoes = pagina.findChildren(_FilterCard)
+    avisos = [[w.text() for w in cartao.findChildren(QLabel) if "replica" in w.text().lower()] for cartao in cartoes]
+    assert avisos[0] == ["Só bloqueia essas palavras em todos os filtros, não replica nada sozinho"]
+    assert avisos[1] == []
+    editar, excluir = cartoes[1].findChildren(TransparentToolButton)
+    editar.click()
+    excluir.click()
+    assert editados == [filtros[1]] and apagados == ["b"]
+    pagina.deleteLater()
