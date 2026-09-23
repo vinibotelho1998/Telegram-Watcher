@@ -13,7 +13,7 @@ from . import pix
 from .. import paths
 from ..matching import normalize
 from .dom import click_first, page_text
-from .models import BuyResult, BuyStatus, ProductInfo
+from .models import CHECKOUT_STUCK, HIDDEN_CAPTCHA, SUCCESS_STATUSES, BuyResult, BuyStatus, ProductInfo, yes_no
 from .urls import terabyte_id
 
 LogCb = Callable[[str], None]
@@ -107,10 +107,12 @@ class TerabyteDriver:
         context: BrowserContext,
         on_log: LogCb | None = None,
         on_captcha: CaptchaCb | None = None,
+        headless: bool = False,
     ) -> None:
         self._context = context
         self._log = on_log or (lambda _message: None)
         self._on_captcha = on_captcha
+        self._headless = headless
         self._quantity = 1
         self._coupon = ""
         self._coupon_note = ""
@@ -143,7 +145,12 @@ class TerabyteDriver:
             result.elapsed = round(time.monotonic() - started, 1)
         if not result.timings:
             result.timings = dict(stopwatch.laps)
+        if self._quantity > 1 and result.status in SUCCESS_STATUSES:
+            result.detail = "; ".join(filter(None, [result.detail, self._quantity_note()]))
         return result
+
+    def _quantity_note(self) -> str:
+        return f"Terabyte: quantidade não suportada, comprando 1 unidade (pedido: {self._quantity})"
 
     async def fetch_product(self, page: Page, url: str) -> ProductInfo | None:
         await page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -210,15 +217,17 @@ class TerabyteDriver:
         if product is None:
             return BuyResult(status=BuyStatus.NOT_FOUND, detail="Dados do produto não encontrados na página")
         stopwatch.lap("produto")
-        self._log(f"{product.title[:60]} | à vista R$ {product.pix_price:.2f} | disponível: {product.available}")
+        self._log(f"{product.title[:60]} | à vista R$ {product.pix_price:.2f} | disponível: {yes_no(product.available)}")
         if not product.available:
-            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product)
+            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product, detail="Produto sem estoque")
         if max_price > 0 and product.pix_price > max_price:
             detail = f"R$ {product.pix_price:.2f} acima do limite R$ {max_price:.2f}"
             return BuyResult(status=BuyStatus.PRICE_ABOVE_LIMIT, product=product, detail=detail)
         if min_price > 0 and product.pix_price < min_price:
             detail = f"R$ {product.pix_price:.2f} abaixo do piso R$ {min_price:.2f}, parece anúncio suspeito"
             return BuyResult(status=BuyStatus.PRICE_BELOW_FLOOR, product=product, detail=detail)
+        if self._quantity > 1:
+            self._log(self._quantity_note())
 
         await self._clear_cart(page)
         await page.goto(product.url, wait_until="domcontentloaded", timeout=45000)
@@ -261,7 +270,7 @@ class TerabyteDriver:
             await asyncio.sleep(1.5)
             if not await self._handle_captcha(page):
                 shot = await self._screenshot(page, "captcha")
-                detail = "Verificação de segurança bloqueou o checkout"
+                detail = HIDDEN_CAPTCHA if self._headless else "Verificação de segurança bloqueou o checkout"
                 return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
             if self._session_lost(page):
                 return self._login_required(product)
@@ -315,7 +324,7 @@ class TerabyteDriver:
             return BuyResult(status=BuyStatus.FAILED, product=product, screenshot=shot, detail=detail)
 
         shot = await self._screenshot(page, "loop")
-        return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="Checkout não convergiu")
+        return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=CHECKOUT_STUCK)
 
     async def _pix_selected(self, page: Page) -> bool:
         try:
@@ -343,7 +352,10 @@ class TerabyteDriver:
                 if await field.count() == 0:
                     return
             await field.fill(self._coupon)
-            await click_first(page, (_COUPON_APPLY,), timeout=6000)
+            if not await click_first(page, (_COUPON_APPLY,), timeout=6000):
+                self._coupon_note = f"Cupom {self._coupon}: botão de aplicar não encontrado"
+                self._log(self._coupon_note)
+                return
             await asyncio.sleep(3.5)
             texto = normalize(await page_text(page))
             if any(hint in texto for hint in _COUPON_REJECTED):
@@ -436,6 +448,9 @@ class TerabyteDriver:
         texto = normalize(await page_text(page))
         if not any(hint in texto for hint in _CAPTCHA_HINTS):
             return True
+        if self._headless:
+            self._log(HIDDEN_CAPTCHA)
+            return False
         self._log("Verificação de navegador na tela: resolva na janela, o robô continua depois")
         if self._on_captcha is not None:
             try:

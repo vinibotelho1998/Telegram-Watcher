@@ -16,6 +16,7 @@ class AutobuySettings:
     use_coupon: bool = True
     headless: bool = False
     check_hours: int = 6
+    known_stores: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "AutobuySettings":
@@ -25,6 +26,7 @@ class AutobuySettings:
             use_coupon=bool(raw.get("use_coupon", True)),
             headless=bool(raw.get("headless", False)),
             check_hours=max(1, int(raw.get("check_hours") or 6)),
+            known_stores=[str(x) for x in (raw.get("known_stores") or []) if str(x)],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,6 +36,7 @@ class AutobuySettings:
             "use_coupon": self.use_coupon,
             "headless": self.headless,
             "check_hours": self.check_hours,
+            "known_stores": self.known_stores,
         }
 
 

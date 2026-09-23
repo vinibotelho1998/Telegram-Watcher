@@ -3,9 +3,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from ..matching import matches_keyword
+from ..matching import matches_include, matches_keyword
 
 _OR_SPLIT = re.compile(r"\s+(?:or|ou)\s+|\|", re.IGNORECASE)
+_JUNCAO = re.compile(r"\s\+\s")
+
+
+def _hit(text: str, word: str) -> bool:
+    if _JUNCAO.search(word):
+        return matches_include(text, [word])
+    return matches_keyword(text, word)
 
 
 def _clean(words: list[str]) -> list[str]:
@@ -54,6 +61,10 @@ class Criteria:
                     all_words.append(part)
         elif phrases:
             for phrase in phrases:
+                partes = [p.strip() for p in phrase.split("+") if p.strip()]
+                if len(partes) > 1:
+                    any_words.append(" + ".join(partes))
+                    continue
                 any_words.extend(o.strip() for o in _OR_SPLIT.split(phrase) if o.strip())
         return cls(all_words=_clean(all_words), any_words=_clean(any_words), none_words=_clean(exclude))
 
@@ -83,8 +94,8 @@ class Criteria:
         return "   |   ".join(parts) if parts else "sem palavras definidas"
 
     def check(self, text: str) -> CriteriaReport:
-        all_checks = [WordCheck(word, matches_keyword(text, word)) for word in self.all_words]
-        any_checks = [WordCheck(word, matches_keyword(text, word)) for word in self.any_words]
+        all_checks = [WordCheck(word, _hit(text, word)) for word in self.all_words]
+        any_checks = [WordCheck(word, _hit(text, word)) for word in self.any_words]
         none_checks = [WordCheck(word, matches_keyword(text, word)) for word in self.none_words]
         blocked = [c.word for c in none_checks if c.hit]
         missing = [c.word for c in all_checks if not c.hit]
@@ -102,5 +113,5 @@ class Criteria:
             report.reason = "Nenhuma das alternativas apareceu no texto"
             return report
         report.matched = True
-        report.reason = "A mensagem seria aceita e o robô iria comprar"
+        report.reason = "As palavras batem"
         return report

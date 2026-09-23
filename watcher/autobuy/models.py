@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any
 
 from ..matching import matches_exclude, matches_include
+from .criteria import Criteria
 
 
 class BuyStatus(str, Enum):
@@ -20,6 +21,34 @@ class BuyStatus(str, Enum):
     FAILED = "failed"
 
 
+STATUS_LABELS: dict[BuyStatus, str] = {
+    BuyStatus.PIX_READY: "PIX gerado",
+    BuyStatus.DRY_RUN_OK: "simulação concluída",
+    BuyStatus.PRICE_ABOVE_LIMIT: "preço acima do limite",
+    BuyStatus.PRICE_BELOW_FLOOR: "preço abaixo do mínimo",
+    BuyStatus.UNAVAILABLE: "produto sem estoque",
+    BuyStatus.NOT_FOUND: "produto não encontrado na página",
+    BuyStatus.LOGIN_REQUIRED: "conta da loja desconectada, reconecte na aba Auto-Compra",
+    BuyStatus.BLOCKED: "travou no checkout (captcha ou mudança no site)",
+    BuyStatus.FAILED: "erro durante a compra",
+}
+
+SUCCESS_STATUSES = (BuyStatus.PIX_READY, BuyStatus.DRY_RUN_OK)
+
+HIDDEN_CAPTCHA = (
+    "Captcha apareceu com o navegador oculto: ligue Mostrar o navegador na aba Auto-Compra para poder resolver"
+)
+CHECKOUT_STUCK = "O robô não conseguiu avançar no checkout, veja o print"
+
+
+def status_label(status: BuyStatus) -> str:
+    return STATUS_LABELS.get(status, str(getattr(status, "value", status)))
+
+
+def yes_no(value: bool) -> str:
+    return "sim" if value else "não"
+
+
 @dataclass(slots=True)
 class WatchItem:
     id: str
@@ -32,6 +61,8 @@ class WatchItem:
     store: str = ""
     min_price: float = 0.0
     disable_after_buy: bool = True
+    all_words: list[str] = field(default_factory=list)
+    any_words: list[str] = field(default_factory=list)
 
     @classmethod
     def new(cls, name: str = "", max_price: float = 0.0) -> "WatchItem":
@@ -50,6 +81,8 @@ class WatchItem:
             store=str(raw.get("store") or ""),
             min_price=float(raw.get("min_price") or 0.0),
             disable_after_buy=bool(raw.get("disable_after_buy", True)),
+            all_words=[str(x) for x in (raw.get("all_words") or [])],
+            any_words=[str(x) for x in (raw.get("any_words") or [])],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,11 +97,20 @@ class WatchItem:
             "store": self.store,
             "min_price": self.min_price,
             "disable_after_buy": self.disable_after_buy,
+            "all_words": self.all_words,
+            "any_words": self.any_words,
         }
+
+    def criteria(self) -> Criteria:
+        if self.all_words or self.any_words:
+            return Criteria(all_words=list(self.all_words), any_words=list(self.any_words), none_words=list(self.exclude))
+        return Criteria.parse(self.include, self.exclude)
 
     def matches(self, text: str) -> bool:
         if not self.enabled or not text:
             return False
+        if self.all_words or self.any_words:
+            return self.criteria().check(text).matched
         if not any(word.strip() for word in self.include):
             return False
         if matches_exclude(text, self.exclude):

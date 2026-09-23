@@ -12,7 +12,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeout
 from . import pix
 from .. import paths
 from ..matching import normalize
-from .models import BuyResult, BuyStatus, ProductInfo
+from .models import CHECKOUT_STUCK, HIDDEN_CAPTCHA, BuyResult, BuyStatus, ProductInfo, yes_no
 from .records import save_record
 
 LogCb = Callable[[str], None]
@@ -85,10 +85,12 @@ class KabumDriver:
         context: BrowserContext,
         on_log: LogCb | None = None,
         on_captcha: CaptchaCb | None = None,
+        headless: bool = False,
     ) -> None:
         self._context = context
         self._log = on_log or (lambda _message: None)
         self._on_captcha = on_captcha
+        self._headless = headless
         self._coupon = ""
         self._coupon_note = ""
         self._quantity = 1
@@ -166,9 +168,9 @@ class KabumDriver:
         if product is None:
             return BuyResult(status=BuyStatus.NOT_FOUND, detail="Dados do produto não encontrados na página")
         stopwatch.lap("produto")
-        self._log(f"{product.title} | à vista R$ {product.pix_price:.2f} | disponível: {product.available}")
+        self._log(f"{product.title} | à vista R$ {product.pix_price:.2f} | disponível: {yes_no(product.available)}")
         if not product.available:
-            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product)
+            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product, detail="Produto sem estoque")
         if max_price > 0 and product.pix_price > max_price:
             detail = f"R$ {product.pix_price:.2f} acima do limite R$ {max_price:.2f}"
             return BuyResult(status=BuyStatus.PRICE_ABOVE_LIMIT, product=product, detail=detail)
@@ -225,7 +227,7 @@ class KabumDriver:
             await self._dismiss_consent(page)
             if not await self._handle_captcha(page):
                 shot = await self._screenshot(page, "captcha")
-                detail = "Captcha bloqueou o checkout e não foi resolvido a tempo"
+                detail = HIDDEN_CAPTCHA if self._headless else "Captcha bloqueou o checkout e não foi resolvido a tempo"
                 return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
             if await self._needs_login(page):
                 detail = "Sessão não logada: conecte a conta na aba Auto-Compra e tente de novo"
@@ -245,7 +247,7 @@ class KabumDriver:
                 if not confirm:
                     stopwatch.lap(_step_name(path))
                     shot = await self._screenshot(page, "dry-run")
-                    detail = "Parado antes de finalizar o pedido (use confirm para comprar)"
+                    detail = "Parado antes de finalizar o pedido (para comprar de verdade, use o modo Compra real)"
                     detail += "; PIX confirmado na revisão" if pix_confirmed else "; atenção: PIX não confirmado na revisão"
                     if self._coupon_note:
                         detail += f"; {self._coupon_note}"
@@ -273,7 +275,7 @@ class KabumDriver:
                 return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
             await asyncio.sleep(2.0)
         shot = await self._screenshot(page, "loop")
-        return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail="Checkout não convergiu")
+        return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=CHECKOUT_STUCK)
 
     async def _apply_coupon(self, page: Page) -> None:
         if not self._coupon or self._coupon_note or "/endereco" not in page.url:
@@ -335,6 +337,9 @@ class KabumDriver:
     async def _handle_captcha(self, page: Page) -> bool:
         if not await self._captcha_present(page):
             return True
+        if self._headless:
+            self._log(HIDDEN_CAPTCHA)
+            return False
         self._log("Captcha na tela: resolva na janela do navegador, o robô continua sozinho depois")
         if self._on_captcha is not None:
             try:

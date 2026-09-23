@@ -4,7 +4,7 @@ from telethon import TelegramClient
 
 from .. import VERSION, paths
 from ..config import AppConfig
-from .models import BuyResult, BuyStatus
+from .models import BuyResult, BuyStatus, status_label
 
 _STEP_LABELS = {
     "produto": "produto",
@@ -22,10 +22,17 @@ def _seconds(value: float) -> str:
     return f"{value:.1f}".replace(".", ",") + "s"
 
 
+def headline(result: BuyResult) -> str:
+    if result.status == BuyStatus.PIX_READY:
+        return "PIX gerado pelo Auto-Compra"
+    if result.status == BuyStatus.DRY_RUN_OK:
+        return "Auto-Compra: simulação concluída, nenhum pedido foi feito"
+    return f"Auto-Compra: compra NÃO feita, {status_label(result.status)}"
+
+
 def build_message(result: BuyResult) -> str:
     product = result.product
-    header = "PIX gerado pelo Auto-Compra" if result.status == BuyStatus.PIX_READY else "Auto-Compra (dry-run concluído)"
-    lines = [f"[Watcher] {header}"]
+    lines = [f"[Watcher] {headline(result)}"]
     if product:
         lines.append(product.title)
         lines.append(f"À vista no PIX: R$ {product.pix_price:.2f}")

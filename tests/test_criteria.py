@@ -89,3 +89,54 @@ def test_summary_describes_rules():
     summary = Criteria(all_words=["ssd", "2tb"], any_words=["bug"], none_words=["usado"]).summary()
     assert "ssd e 2tb" in summary
     assert "usado" in summary
+
+
+def test_palavras_repetidas_ou_com_virgula_sobrando_sao_limpas():
+    criteria = Criteria.parse(["  SSD  +  ssd + , 2tb ,"], ["usado,", " Usado "])
+    assert criteria.all_words == ["SSD", "2tb"]
+    assert criteria.none_words == ["usado"]
+    assert criteria.to_exclude() == ["usado"]
+
+
+def test_criterio_simples_e_vazio():
+    assert Criteria(all_words=["ssd"], any_words=["bug"]).is_simple()
+    assert not Criteria(any_words=["rtx + 5060"]).is_simple()
+    assert Criteria(none_words=["usado"]).is_empty()
+    assert Criteria(none_words=["usado"]).summary() == "não tem usado"
+    assert Criteria().summary() == "sem palavras definidas"
+
+
+def test_produto_antigo_com_mais_em_varias_frases_continua_comprando_depois_de_editado():
+    antigo = WatchItem(id="w1", name="Placas", max_price=2500.0, include=["rtx + 5060", "rx + 7600"])
+    mensagens = {
+        "RTX 5060 Ventus por R$ 2.199": True,
+        "Placa RX 7600 barata": True,
+        "RTX 4060 por R$ 1.799": False,
+        "Suporte para 5060 e 7600": False,
+    }
+    for texto, compra in mensagens.items():
+        assert antigo.matches(texto) is compra, texto
+    criteria = antigo.criteria()
+    salvo = WatchItem(
+        id=antigo.id, name=antigo.name, max_price=antigo.max_price,
+        include=criteria.to_include(), exclude=criteria.to_exclude(),
+        all_words=criteria.all_words, any_words=criteria.any_words,
+    )
+    for texto, compra in mensagens.items():
+        assert criteria.check(texto).matched is compra, texto
+        assert salvo.matches(texto) is compra, texto
+    assert WatchItem.from_dict(salvo.to_dict()).matches("RTX 5060 Ventus por R$ 2.199")
+
+
+def test_frase_antiga_com_mais_e_ou_mantem_a_mesma_regra():
+    antigo = WatchItem(id="w1", name="5060", max_price=2500.0, include=["rtx + 5060 ou 5060ti", "rx 7600"])
+    criteria = antigo.criteria()
+    casos = {
+        "RTX 5060 barata": True,
+        "RTX 5060ti barata": True,
+        "5060ti avulsa sem marca": False,
+        "RX 7600 Pulse": True,
+    }
+    for texto, compra in casos.items():
+        assert antigo.matches(texto) is compra, texto
+        assert criteria.check(texto).matched is compra, texto

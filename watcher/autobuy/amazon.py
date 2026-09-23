@@ -12,7 +12,7 @@ from . import pix
 from .. import paths
 from ..matching import normalize
 from .dom import click_first, find_clickable, page_text
-from .models import BuyResult, BuyStatus, ProductInfo
+from .models import CHECKOUT_STUCK, HIDDEN_CAPTCHA, BuyResult, BuyStatus, ProductInfo, yes_no
 from .records import save_record
 
 LogCb = Callable[[str], None]
@@ -128,10 +128,12 @@ class AmazonDriver:
         context: BrowserContext,
         on_log: LogCb | None = None,
         on_captcha: CaptchaCb | None = None,
+        headless: bool = False,
     ) -> None:
         self._context = context
         self._log = on_log or (lambda _message: None)
         self._on_captcha = on_captcha
+        self._headless = headless
         self._quantity = 1
         self._pix_selected = False
         self._coupon = ""
@@ -248,9 +250,9 @@ class AmazonDriver:
         if product is None:
             return BuyResult(status=BuyStatus.NOT_FOUND, detail="Dados do produto não encontrados na página")
         stopwatch.lap("produto")
-        self._log(f"{product.title[:60]} | PIX R$ {product.pix_price:.2f} | disponível: {product.available}")
+        self._log(f"{product.title[:60]} | PIX R$ {product.pix_price:.2f} | disponível: {yes_no(product.available)}")
         if not product.available:
-            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product)
+            return BuyResult(status=BuyStatus.UNAVAILABLE, product=product, detail="Produto sem estoque")
         if max_price > 0 and product.pix_price > max_price:
             detail = f"R$ {product.pix_price:.2f} acima do limite R$ {max_price:.2f}"
             return BuyResult(status=BuyStatus.PRICE_ABOVE_LIMIT, product=product, detail=detail)
@@ -299,11 +301,11 @@ class AmazonDriver:
 
             if not await self._handle_captcha(page):
                 shot = await self._screenshot(page, "captcha")
-                detail = "Captcha bloqueou o checkout e não foi resolvido a tempo"
+                detail = HIDDEN_CAPTCHA if self._headless else "Captcha bloqueou o checkout e não foi resolvido a tempo"
                 return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
 
             if await self._needs_login(page):
-                detail = "Sessão não logada: rode scripts/autobuy_login.py amazon e tente de novo"
+                detail = "Sessão não logada: conecte a conta na aba Auto-Compra e tente de novo"
                 return BuyResult(status=BuyStatus.LOGIN_REQUIRED, product=product, detail=detail)
 
             code = await pix.extract(page)
@@ -350,7 +352,7 @@ class AmazonDriver:
 
         shot = await self._screenshot(page, "loop")
         visiveis = await self._visible_buttons(page)
-        detail = f"Checkout não convergiu na etapa '{last_step}'"
+        detail = f"{CHECKOUT_STUCK} (etapa '{last_step}')"
         if visiveis:
             detail += f"; botões na tela: {' | '.join(visiveis)}"
         return BuyResult(status=BuyStatus.BLOCKED, product=product, screenshot=shot, detail=detail)
@@ -526,6 +528,9 @@ class AmazonDriver:
     async def _handle_captcha(self, page: Page) -> bool:
         if not await self._captcha_present(page):
             return True
+        if self._headless:
+            self._log(HIDDEN_CAPTCHA)
+            return False
         self._log("Captcha na tela: resolva na janela do navegador, o robô continua sozinho depois")
         if self._on_captcha is not None:
             try:

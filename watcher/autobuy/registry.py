@@ -44,18 +44,18 @@ class StoreSpec:
     def headless_allowed(self, preferido: bool) -> bool:
         return preferido and not self.requires_window
 
-    def driver(self, context: Any, on_log=None, on_captcha=None):
+    def driver(self, context: Any, on_log=None, on_captcha=None, headless: bool = False):
         if self.id == "kabum":
             from .kabum import KabumDriver
 
-            return KabumDriver(context, on_log=on_log, on_captcha=on_captcha)
+            return KabumDriver(context, on_log=on_log, on_captcha=on_captcha, headless=headless)
         if self.id == "terabyte":
             from .terabyte import TerabyteDriver
 
-            return TerabyteDriver(context, on_log=on_log, on_captcha=on_captcha)
+            return TerabyteDriver(context, on_log=on_log, on_captcha=on_captcha, headless=headless)
         from .amazon import AmazonDriver
 
-        return AmazonDriver(context, on_log=on_log, on_captcha=on_captcha)
+        return AmazonDriver(context, on_log=on_log, on_captcha=on_captcha, headless=headless)
 
     def logged_user(self, raw: str) -> str | None:
         from ..matching import normalize
@@ -138,22 +138,38 @@ def match_url(url: str) -> StoreSpec | None:
     return None
 
 
+def direct_products(text: str) -> list[tuple[StoreSpec, str]]:
+    out: list[tuple[StoreSpec, str]] = []
+    for url in extract_urls(text):
+        spec = match_url(url)
+        if spec is not None:
+            out.append((spec, spec.canonical(url)))
+    return out
+
+
+def resolved_products(
+    text: str, aceita: Callable[[StoreSpec], bool] | None = None
+) -> list[tuple[StoreSpec, str]]:
+    out: list[tuple[StoreSpec, str]] = []
+    for url in extract_urls(text):
+        if match_url(url) is not None:
+            continue
+        resolved = resolve(url)
+        spec = match_url(resolved)
+        if spec is not None:
+            out.append((spec, spec.canonical(resolved)))
+            if aceita is not None and aceita(spec):
+                break
+    return out
+
+
 def find_product(text: str, allowed: list[str] | None = None) -> tuple[StoreSpec, str] | None:
-    found = extract_urls(text)
     permitidas = {s.strip().lower() for s in (allowed or []) if s.strip()}
 
     def aceita(spec: StoreSpec) -> bool:
         return not permitidas or spec.id in permitidas
 
-    for url in found:
-        spec = match_url(url)
-        if spec is not None and aceita(spec):
-            return spec, spec.canonical(url)
-    for url in found:
-        if match_url(url) is not None:
-            continue
-        resolved = resolve(url)
-        spec = match_url(resolved)
-        if spec is not None and aceita(spec):
-            return spec, spec.canonical(resolved)
-    return None
+    def primeiro(links: list[tuple[StoreSpec, str]]) -> tuple[StoreSpec, str] | None:
+        return next(((spec, url) for spec, url in links if aceita(spec)), None)
+
+    return primeiro(direct_products(text)) or primeiro(resolved_products(text, aceita))

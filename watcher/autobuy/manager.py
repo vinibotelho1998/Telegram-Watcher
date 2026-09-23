@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from ..detector import detect
 from ..models import LogLevel
 from . import journal
-from .models import BuyResult, BuyStatus, ProductInfo, WatchItem
+from .models import SUCCESS_STATUSES, BuyResult, BuyStatus, ProductInfo, WatchItem, status_label
 from .resolver import extract_urls, find_kabum_product, product_id
 from .storage import AutobuySettings, AutobuyStore
 
@@ -19,8 +19,11 @@ ResultCb = Callable[[BuyResult], Awaitable[None]]
 AlertCb = Callable[[str], None]
 
 _REBUY_COOLDOWN = 1800.0
+_RETRY_COOLDOWN = 120.0
 _MIN_COUPON_CONFIDENCE = 0.5
 _WATCHDOG_RETRY = 900.0
+_PENDING_LIMIT = 2
+_PENDING_MAX_AGE = 120.0
 
 
 def _noop_log(_message: str, _level: LogLevel) -> None:
@@ -46,9 +49,12 @@ class AutobuyManager:
         self.settings, self.items = self._store.load()
         self._busy = False
         self._recent: dict[str, float] = {}
+        self._pending: list[tuple[float, str]] = []
         self.accounts: dict[str, str | None] = {}
         self.checked: set[str] = set()
+        self.check_failed: set[str] = set()
         self.busy_profile = False
+        self.login_open = False
         self._watchdog: asyncio.Task | None = None
         self._last_alert: dict[str, float] = {}
         self._profile_lock = asyncio.Lock()
@@ -93,31 +99,46 @@ class AutobuyManager:
                 item.enabled = enabled
         self.save()
 
-    def find_item(self, text: str) -> WatchItem | None:
+    def find_items(self, text: str) -> list[WatchItem]:
         if not self.settings.enabled or not text:
-            return None
-        for item in self.items:
-            if item.matches(text):
-                return item
-        return None
+            return []
+        return [item for item in self.items if item.matches(text)]
+
+    def find_item(self, text: str) -> WatchItem | None:
+        items = self.find_items(text)
+        return items[0] if items else None
 
     def handle_text(self, text: str) -> bool:
-        item = self.find_item(text)
-        if item is None:
+        items = self.find_items(text)
+        if not items:
+            return False
+        nomes = ", ".join(item.name for item in items)
+        if not extract_urls(text):
+            self._log(f"Promo de {nomes} sem link, ignorada", LogLevel.WARNING)
             return False
         if self._busy:
-            self._log(f"Auto-compra ocupada, ignorando promo de {item.name}", LogLevel.WARNING)
-            return False
-        if not extract_urls(text):
-            self._log(f"Promo de {item.name} sem link, ignorada", LogLevel.WARNING)
-            return False
+            if len(self._pending) >= _PENDING_LIMIT:
+                self._log(f"Robô ocupado e fila cheia, promo de {nomes} ignorada", LogLevel.WARNING)
+                return False
+            self._pending.append((time.monotonic(), text))
+            self._log(f"Robô ocupado: promo de {nomes} guardada, será tentada assim que ele terminar", LogLevel.WARNING)
+            return True
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return False
         self._busy = True
-        loop.create_task(self._buy_flow(text, item))
+        loop.create_task(self._buy_flow(text, items))
         return True
+
+    def _release(self) -> None:
+        self._busy = False
+        while self._pending and not self._busy:
+            quando, text = self._pending.pop(0)
+            if time.monotonic() - quando > _PENDING_MAX_AGE:
+                self._log("Promo guardada passou de 2 minutos na fila e foi descartada", LogLevel.WARNING)
+                continue
+            self.handle_text(text)
 
     def pick_coupon(self, text: str) -> str:
         if not self.settings.use_coupon:
@@ -158,7 +179,14 @@ class AutobuyManager:
         if not presente:
             self.accounts[spec.id] = None
         self.checked.add(spec.id)
+        if presente:
+            self._remember_store(spec.id)
         return presente
+
+    def _remember_store(self, store_id: str) -> None:
+        if store_id not in self.settings.known_stores:
+            self.settings.known_stores.append(store_id)
+            self.save()
 
     async def check_login(self, store_id: str = "kabum", deep: bool = True) -> str | None:
         from . import registry
@@ -176,6 +204,7 @@ class AutobuyManager:
             from .browser import close_context, open_context
         except ImportError:
             self._log("Playwright não instalado: pip install -r requirements-autobuy.txt", LogLevel.ERROR)
+            self.check_failed.add(spec.id)
             return None
         try:
             async with self._profile_lock, async_playwright() as playwright:
@@ -190,6 +219,7 @@ class AutobuyManager:
         except Exception as exc:
             from .browser import ProfileInUse
 
+            self.check_failed.add(spec.id)
             if isinstance(exc, ProfileInUse):
                 self._log(str(exc), LogLevel.WARNING)
                 self.busy_profile = True
@@ -197,9 +227,12 @@ class AutobuyManager:
             self._log(f"Falha ao verificar conexão com a {spec.label}: {exc}", LogLevel.ERROR)
             return None
         self.busy_profile = False
+        self.check_failed.discard(spec.id)
         user = spec.logged_user(raw or "")
         self.accounts[spec.id] = user
         self.checked.add(spec.id)
+        if user:
+            self._remember_store(spec.id)
         return user
 
     async def check_all(self) -> dict[str, str | None]:
@@ -226,6 +259,7 @@ class AutobuyManager:
             self._log("Playwright não instalado: pip install -r requirements-autobuy.txt", LogLevel.ERROR)
             return None
         self._busy = True
+        self.login_open = True
         try:
             async with self._profile_lock, async_playwright() as playwright:
                 context = await open_context(playwright, headless=False)
@@ -249,7 +283,8 @@ class AutobuyManager:
             self._log(f"Falha na janela de login: {exc}", LogLevel.ERROR)
             return None
         finally:
-            self._busy = False
+            self.login_open = False
+            self._release()
         return await self.check_login(spec.id)
 
     @property
@@ -285,34 +320,51 @@ class AutobuyManager:
         try:
             await asyncio.sleep(60.0)
             while True:
-                await self._watchdog_tick()
-                await asyncio.sleep(interval if not self._busy else _WATCHDOG_RETRY)
+                de_novo_logo = await self._watchdog_tick()
+                await asyncio.sleep(_WATCHDOG_RETRY if self._busy or de_novo_logo else interval)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self._log(f"Vigia de sessão parou: {exc}", LogLevel.WARNING)
 
-    async def _watchdog_tick(self) -> None:
+    async def _watchdog_tick(self) -> bool:
         from . import registry
 
         if not self.settings.enabled or self._busy:
-            return
+            return False
+        de_novo_logo = False
         for spec in registry.all_stores():
             if not self._store_in_use(spec.id):
                 continue
-            user = await self.check_login(spec.id)
+            if spec.requires_window:
+                presente = self.quick_check(spec.id)
+                verificou = presente is not None
+                user = self.accounts.get(spec.id) if presente else None
+            else:
+                user = await self.check_login(spec.id)
+                verificou = spec.id not in self.check_failed
+            if not verificou:
+                self._log(
+                    f"Não deu para verificar a sessão da {spec.label} agora, nova tentativa em 15 minutos",
+                    LogLevel.WARNING,
+                )
+                de_novo_logo = True
+                continue
             if user:
                 self._log(f"Sessão da {spec.label} ativa ({user})", LogLevel.INFO)
                 continue
             message = f"Sua conta da {spec.label} caiu! Reconecte na aba Auto-Compra antes da próxima promoção."
             self._log(message, LogLevel.ERROR)
             self._alert(spec.id, message)
+        return de_novo_logo
 
     def _store_in_use(self, store_id: str) -> bool:
         ativos = [item for item in self.items if item.enabled]
-        if not ativos:
+        if any(item.store == store_id for item in ativos):
+            return True
+        if not any(not item.store for item in ativos):
             return False
-        return any(not item.store or item.store == store_id for item in ativos)
+        return store_id in self.settings.known_stores or bool(self.accounts.get(store_id))
 
     async def probe(self, url: str) -> ProductInfo | None:
         from . import registry
@@ -335,12 +387,14 @@ class AutobuyManager:
         self._busy = True
         try:
             async with self._profile_lock, async_playwright() as playwright:
-                context = await self._context_for(playwright, spec, spec.headless_allowed(True))
+                headless = self._hidden(spec, True)
+                context = await self._context_for(playwright, spec, headless)
                 try:
                     driver = spec.driver(
                         context,
                         on_log=lambda message: self._log(message, LogLevel.INFO),
                         on_captcha=self._on_captcha,
+                        headless=headless,
                     )
                     page = await context.new_page()
                     try:
@@ -353,7 +407,11 @@ class AutobuyManager:
             self._log(f"Falha ao consultar o produto: {exc}", LogLevel.ERROR)
             return None
         finally:
-            self._busy = False
+            self._release()
+
+    @staticmethod
+    def _hidden(spec, preferido: bool) -> bool:
+        return spec.headless_allowed(preferido) and not getattr(spec, "needs_real_chrome", False)
 
     async def run_test(
         self,
@@ -390,12 +448,14 @@ class AutobuyManager:
         self._busy = True
         try:
             async with self._profile_lock, async_playwright() as playwright:
-                context = await self._context_for(playwright, spec, spec.headless_allowed(headless))
+                escondido = self._hidden(spec, headless)
+                context = await self._context_for(playwright, spec, escondido)
                 try:
                     driver = spec.driver(
                         context,
                         on_log=lambda message: self._log(message, LogLevel.INFO),
                         on_captcha=self._on_captcha,
+                        headless=escondido,
                     )
                     result = await driver.buy(
                         spec.canonical(url),
@@ -411,39 +471,74 @@ class AutobuyManager:
             self._log(f"Teste falhou: {exc}", LogLevel.ERROR)
             return None
         finally:
-            self._busy = False
-        level = LogLevel.SUCCESS if result.status in (BuyStatus.PIX_READY, BuyStatus.DRY_RUN_OK) else LogLevel.WARNING
-        self._log(f"Teste terminou como {result.status.value}: {result.detail or 'sem detalhes'}", level)
+            self._release()
+        level = LogLevel.SUCCESS if result.status in SUCCESS_STATUSES else LogLevel.WARNING
+        self._log(f"Teste terminou: {status_label(result.status)}. {result.detail or ''}".strip(), level)
         return result
 
-    async def _buy_flow(self, text: str, item: WatchItem) -> None:
+    async def _buy_flow(self, text: str, items: list[WatchItem]) -> None:
         try:
-            result = await self._execute(text, item)
+            result = await self._execute(text, items)
             if result is not None and self._on_result is not None:
                 await self._on_result(result)
         except Exception as exc:
             self._log(f"Auto-compra falhou: {exc}", LogLevel.ERROR)
         finally:
-            self._busy = False
+            self._release()
 
-    async def _execute(self, text: str, item: WatchItem) -> BuyResult | None:
+    @staticmethod
+    def _pick(items: list[WatchItem], links: list) -> tuple[WatchItem, object, str] | None:
+        for item in items:
+            for spec, url in links:
+                if not item.store or item.store == spec.id:
+                    return item, spec, url
+        return None
+
+    async def _execute(self, text: str, items: list[WatchItem]) -> BuyResult | None:
         from . import registry
 
-        self._log(f"Promo casou com '{item.name}', procurando link de loja conhecida", LogLevel.CAPTURE)
-        allowed = [item.store] if item.store else None
-        found = await asyncio.to_thread(registry.find_product, text, allowed)
-        if found is None:
-            lojas = ", ".join(registry.labels().values())
-            self._log(f"Nenhum link de produto nas lojas suportadas ({lojas})", LogLevel.WARNING)
+        nomes = ", ".join(f"'{item.name}'" for item in items)
+        self._log(f"Promo casou com {nomes}, procurando link de loja conhecida", LogLevel.CAPTURE)
+        links = registry.direct_products(text)
+        escolha = self._pick(items, links)
+        if escolha is None:
+
+            def aceita(spec) -> bool:
+                return any(not item.store or item.store == spec.id for item in items)
+
+            links = links + await asyncio.to_thread(registry.resolved_products, text, aceita)
+            escolha = self._pick(items, links)
+        if escolha is None:
+            if not links:
+                lojas = ", ".join(registry.labels().values())
+                self._log(f"Nenhum link de produto nas lojas suportadas ({lojas})", LogLevel.WARNING)
+            else:
+                lojas_link = ", ".join(dict.fromkeys(spec.label for spec, _url in links))
+                lojas_item = ", ".join(
+                    dict.fromkeys(registry.get(item.store).label for item in items if registry.get(item.store))
+                )
+                self._log(
+                    f"Promo casou com {nomes}, mas o link é da {lojas_link} e o produto só compra na {lojas_item}",
+                    LogLevel.WARNING,
+                )
             return None
-        spec, url = found
-        self._log(f"Loja identificada: {spec.label}", LogLevel.INFO)
+        item, spec, url = escolha
+        self._log(f"Loja identificada: {spec.label} (produto '{item.name}')", LogLevel.INFO)
         key = f"{spec.id}:{url}"
         last = self._recent.get(key)
         if last is not None and time.monotonic() - last < _REBUY_COOLDOWN:
             self._log("Produto já tratado há pouco, ignorando repetição", LogLevel.INFO)
             return None
         self._recent[key] = time.monotonic()
+        result = None
+        try:
+            result = await self._attempt(text, item, spec, url)
+        finally:
+            if result is None or result.status not in SUCCESS_STATUSES:
+                self._recent[key] = time.monotonic() - (_REBUY_COOLDOWN - _RETRY_COOLDOWN)
+        return result
+
+    async def _attempt(self, text: str, item: WatchItem, spec, url: str) -> BuyResult | None:
         coupon = self.pick_coupon(text)
         if coupon:
             self._log(f"Cupom detectado na mensagem: {coupon}", LogLevel.INFO)
@@ -459,12 +554,14 @@ class AutobuyManager:
         journal.separator(f"PROMO CAPTURADA -> {mode.upper()} na {spec.label}: {url[:60]}")
         self._log(f"Iniciando {mode} na {spec.label}: {url}", LogLevel.INFO)
         async with self._profile_lock, async_playwright() as playwright:
-            context = await self._context_for(playwright, spec, spec.headless_allowed(self.settings.headless))
+            escondido = self._hidden(spec, self.settings.headless)
+            context = await self._context_for(playwright, spec, escondido)
             try:
                 driver = spec.driver(
                     context,
                     on_log=lambda message: self._log(message, LogLevel.INFO),
                     on_captcha=self._on_captcha,
+                    headless=escondido,
                 )
                 result = await driver.buy(
                     url,
@@ -482,6 +579,8 @@ class AutobuyManager:
                 self.save()
             suffix = "; item desativado" if item.disable_after_buy else ""
             self._log(f"PIX gerado para {item.name} em {result.elapsed:.1f}s{suffix}", LogLevel.SUCCESS)
+        elif result.status == BuyStatus.DRY_RUN_OK:
+            self._log(f"Simulação concluída para {item.name}: {result.detail}", LogLevel.SUCCESS)
         else:
-            self._log(f"Auto-compra terminou com status {result.status.value}: {result.detail}", LogLevel.WARNING)
+            self._log(f"Compra NÃO feita ({status_label(result.status)}): {result.detail}", LogLevel.WARNING)
         return result
