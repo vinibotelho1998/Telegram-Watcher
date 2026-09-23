@@ -179,3 +179,44 @@ def test_filtros_que_casam_ignoram_desligados_e_excluidos():
     filtros = [ativo, desligado, bloqueio]
     assert [f.id for f in matching_filters(filtros, -1, "cupom novo")] == ["a"]
     assert matching_filters(filtros, -1, "cupom shein") == []
+
+
+class DownloadClient:
+    def __init__(self, fail: bool):
+        self.fail = fail
+
+    def is_connected(self):
+        return True
+
+    def _write(self, file):
+        with open(file, "wb") as handle:
+            handle.write(b"meia" if self.fail else b"imagem-completa")
+        if self.fail:
+            raise ConnectionError("conexao caiu no meio")
+        return file
+
+    async def download_media(self, message, file=None, thumb=None):
+        return self._write(file)
+
+    async def download_profile_photo(self, entity, file=None):
+        return self._write(file)
+
+
+def test_miniatura_interrompida_nao_fica_no_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr("watcher.reader.paths.thumb_cache_dir", lambda: tmp_path)
+    clients = {"atual": DownloadClient(fail=True)}
+    reader = ChatReader(lambda: clients["atual"])
+    reader.remember(-100, FakeMessage(5, "", photo=object()))
+    assert run(reader.thumbnail(-100, 5)) is None
+    clients["atual"] = DownloadClient(fail=False)
+    path = run(reader.thumbnail(-100, 5))
+    assert path is not None and path.read_bytes() == b"imagem-completa"
+
+
+def test_avatar_interrompido_nao_fica_no_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr("watcher.reader.paths.avatar_cache_dir", lambda: tmp_path)
+    reader = ChatReader(lambda: DownloadClient(fail=True))
+    assert run(reader.avatar(-100)) is None
+    reader = ChatReader(lambda: DownloadClient(fail=False))
+    path = run(reader.avatar(-100))
+    assert path is not None and path.read_bytes() == b"imagem-completa"

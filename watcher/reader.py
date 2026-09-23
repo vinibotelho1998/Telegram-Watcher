@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -71,6 +72,27 @@ def preview_text(message: ChatMessage, limit: int = 62) -> str:
     if not body and message.service:
         body = message.service
     return body if len(body) <= limit else body[: limit - 1] + "…"
+
+
+def _partial(target: Path) -> Path:
+    return target.with_name(f"{target.name}.part")
+
+
+def _discard(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _promote(saved: Path, target: Path) -> Path | None:
+    try:
+        os.replace(saved, target)
+    except OSError:
+        log.debug("Não consegui mover %s para o cache", saved, exc_info=True)
+        _discard(saved)
+        return None
+    return target
 
 
 def dialog_kind(dialog: Any) -> ChannelKind:
@@ -252,15 +274,17 @@ class ChatReader:
         target = paths.avatar_cache_dir() / f"{chat_id}.jpg"
         if target.exists():
             return target
+        partial = _partial(target)
         try:
-            saved = await client.download_profile_photo(chat_id, file=str(target))
+            saved = await client.download_profile_photo(chat_id, file=str(partial))
         except Exception:
             log.debug("Sem avatar para %s", chat_id, exc_info=True)
             saved = None
         if not saved:
+            _discard(partial)
             self._no_avatar.add(chat_id)
             return None
-        return Path(saved)
+        return _promote(Path(saved), target)
 
     async def thumbnail(self, chat_id: int, message_id: int) -> Path | None:
         client = self.client
@@ -273,9 +297,14 @@ class ChatReader:
         target = paths.thumb_cache_dir() / f"{chat_id}_{message_id}.jpg"
         if target.exists():
             return target
+        partial = _partial(target)
         try:
-            saved = await client.download_media(raw, file=str(target), thumb=-1)
+            saved = await client.download_media(raw, file=str(partial), thumb=-1)
         except Exception:
             log.debug("Sem miniatura para %s/%s", chat_id, message_id, exc_info=True)
+            _discard(partial)
             return None
-        return Path(saved) if saved else None
+        if not saved:
+            _discard(partial)
+            return None
+        return _promote(Path(saved), target)
