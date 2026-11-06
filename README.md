@@ -94,6 +94,10 @@ disponibiliza `Telegram-Watcher-linux.tar.gz` nos artefatos. Ao enviar uma tag
 `./instalar-linux.sh`, seguido de `./abrir.sh`. O pacote contém o código e os
 lançadores. O instalador baixa as bibliotecas Python e o Chromium.
 
+Se a tag apontar para um commit automático marcado com `[skip ci]`, abra
+**Actions → Linux → Run workflow** e selecione a tag para iniciar a publicação.
+Pela linha de comando, use `gh workflow run linux.yml --ref vX.Y.Z`.
+
 ## Primeiros passos
 
 1. Abra a aba **Configurações** e preencha:
