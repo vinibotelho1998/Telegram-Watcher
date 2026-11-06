@@ -27,9 +27,17 @@ def app_dir() -> Path:
     if os.name == "nt":
         root = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         path = Path(root) / APP_ID
+    elif sys.platform.startswith("linux"):
+        root = Path(os.environ.get("XDG_DATA_HOME", ""))
+        if not root.is_absolute():
+            root = Path.home() / ".local" / "share"
+        path = root / APP_ID.lower()
+        legacy = Path.home() / f".{APP_ID.lower()}"
+        if legacy.is_dir() and not path.exists():
+            path = legacy
     else:
         path = Path.home() / f".{APP_ID.lower()}"
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
     return path
 
 

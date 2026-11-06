@@ -12,7 +12,7 @@ O código separa o núcleo (sem dependência de interface) da camada visual.
 
 ```
 app.py        Bootstrap: QApplication, loop qasync, logging, AppWindow
-monitor/      Núcleo testável, independente de Qt
+watcher/      Núcleo testável, independente de Qt
   config.py     AppConfig: leitura e escrita do .env
   models.py     Filter, Channel, Metrics, EngineState, LogLevel
   storage.py    FilterStore e ChannelCache em JSON
@@ -48,7 +48,7 @@ ui/           Interface PyQt6
 tests/        Testes pytest do núcleo
 ```
 
-O auto-compra funciona em conjunto com o monitor mas é um componente separado: o motor apenas emite o texto capturado pelo callback genérico `on_text`, e o `AutobuyManager` decide se compra. A compra usa Playwright (`requirements-autobuy.txt` + `playwright install chromium`) com perfil persistente em `%APPDATA%\TelegramWatcher\browser`, onde o login na loja é feito uma única vez pela janela real do site (nunca por formulário no app). O fluxo para na geração do código PIX: o pagamento é sempre manual.
+O auto-compra funciona em conjunto com o monitor mas é um componente separado: o motor apenas emite o texto capturado pelo callback genérico `on_text`, e o `AutobuyManager` decide se compra. A compra usa Playwright (`requirements-autobuy.txt` + `playwright install chromium`) com perfil persistente na subpasta `browser/` da pasta de dados, onde o login na loja é feito uma única vez pela janela real do site (nunca por formulário no app). O fluxo para na geração do código PIX: o pagamento é sempre manual.
 
 Cada loja é um driver com a mesma interface: `fetch_product(page, url) -> ProductInfo` e `buy(url, max_price, confirm, coupon, min_price, quantity) -> BuyResult`. O `registry` casa a URL com a loja e instancia o driver certo, então adicionar uma loja é escrever um módulo e registrar um `StoreSpec`. Duas invariantes valem para todo driver: o pagamento é sempre PIX, e o driver **recusa finalizar** se a revisão não confirmar PIX. Quando aparece captcha, o driver alerta pelo callback `on_captcha` e espera a resolução manual em vez de falhar; se o navegador estiver oculto (`headless`), encerra na hora com `BLOCKED` e um detalhe que manda ligar a janela.
 
@@ -97,3 +97,7 @@ Os testes cobrem modelos, configuração, detector, correspondência de palavras
 ## Diretórios de dados
 
 `monitor/paths.py` centraliza os caminhos. Em desenvolvimento e no executável os dados persistentes ficam em `%APPDATA%\TelegramWatcher`. Recursos da interface, como ícones, são resolvidos por `resource_path`, compatível com PyInstaller.
+
+## Integração com Linux
+
+`watcher/paths.py` resolve a pasta de dados XDG e reconhece perfis Linux anteriores. `watcher/linux_desktop.py` gerencia a entrada de inicialização da sessão. Abrir logs e pastas usa o aplicativo padrão do desktop via Qt. A validação em CI usa perfis temporários e o plugin offscreen do Qt.

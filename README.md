@@ -12,14 +12,14 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 
 ## Destaques
 
-- Interface Fluent Design escura, fluida e nativa do Windows 11, construída com PyQt6 e QFluentWidgets.
+- Interface Fluent Design para Linux e Windows, construída com PyQt6 e QFluentWidgets.
 - Leitor de conversas embutido: navegue pelos seus canais e leia o histórico em balões, como no Telegram, sem sair do app.
 - Replicação em tempo real preservando a mensagem original, com encaminhamento nativo e cópia automática como alternativa.
 - Filtros inteligentes que detectam cupons, frete grátis, cashback, descontos e lojas sem precisar cadastrar cada código.
 - Filtros por palavra com lógica de inclusão e exclusão, suporte a junção obrigatória com `+` e alternativas com `ou`.
 - Dashboard com métricas ao vivo, gráfico de atividade por hora e histórico das últimas capturas.
 - Compra automática (BETA) na KaBuM, Amazon e Terabyte: configure produtos, palavras e preço máximo, e o robô compra sozinho até gerar o PIX, aplicando cupom da mensagem e avisando no seu Telegram.
-- Bandeja do sistema, inicialização junto com o Windows e início automático do monitor.
+- Bandeja do sistema, inicialização ao entrar na sessão e início automático do monitor.
 - Credenciais e sessões guardadas localmente, fora do controle de versão.
 
 ## Capturas de tela
@@ -58,7 +58,19 @@ Nada é enviado por essa tela: ela só lê. Mensagens novas aparecem sozinhas en
 | Loop assíncrono | qasync, integrando asyncio ao event loop do Qt |
 | Configuração | python-dotenv |
 
-## Instalação
+## Linux
+
+Nesta cópia, execute `./abrir.sh` para abrir a interface. Em uma instalação nova, rode
+`./instalar-linux.sh` uma vez. Ele prepara o ambiente Python e instala o Chromium
+usado pela automação opcional. O Chrome instalado via Flatpak também é detectado para
+lojas que precisam do navegador do sistema.
+
+O primeiro acesso abre o assistente de conta. Os dados ficam em
+`$XDG_DATA_HOME/telegramwatcher` (padrão `~/.local/share/telegramwatcher`).
+Quem já usava `~/.telegramwatcher` continua com essa pasta enquanto a nova estiver ausente.
+A opção **Iniciar ao entrar no sistema** registra o aplicativo em XDG Autostart.
+
+## Instalação no Windows
 
 ```bash
 git clone https://github.com/vinibotelho1998/Telegram-Watcher.git
@@ -72,6 +84,15 @@ python app.py
 ```
 
 No Windows você também pode iniciar com um duplo clique em `ABRIR.bat`.
+
+## CI e distribuição Linux
+
+O workflow Linux roda a suíte e abre a janela com um perfil de teste no Ubuntu 24.04,
+em pull requests, pushes na main e execuções manuais. Cada execução bem-sucedida
+disponibiliza `Telegram-Watcher-linux.tar.gz` nos artefatos. Ao enviar uma tag
+`vX.Y.Z`, o mesmo arquivo é anexado à release. Extraia o pacote e execute
+`./instalar-linux.sh`, seguido de `./abrir.sh`. O pacote contém o código e os
+lançadores. O instalador baixa as bibliotecas Python e o Chromium.
 
 ## Primeiros passos
 
@@ -125,7 +146,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -q
 ```
 
-158 testes cobrem o núcleo sem depender de rede: modelos, configuração, detector de cupons, correspondência de palavras, roteamento de filtros, o motor com eventos simulados e o roteamento de lojas da auto-compra.
+Os testes cobrem o núcleo sem depender de rede: modelos, configuração, detector de cupons, correspondência de palavras, roteamento de filtros, o motor com eventos simulados e o roteamento de lojas da auto-compra.
 
 ## Gerar executável
 
@@ -141,7 +162,7 @@ O executável é gerado em `dist`.
 ```
 Telegram-Watcher/
 ├── app.py                 Ponto de entrada, bootstrap do Qt e do asyncio
-├── monitor/               Núcleo independente da interface
+├── watcher/               Núcleo independente da interface
 │   ├── config.py          Credenciais e preferências
 │   ├── models.py          Filtros, canais, métricas e estados
 │   ├── storage.py         Persistência em JSON
@@ -163,9 +184,9 @@ Telegram-Watcher/
 
 ## Privacidade e segurança
 
-- As credenciais ficam em um arquivo `.env` dentro de `%APPDATA%\TelegramWatcher`, nunca no repositório.
+- As credenciais ficam em um arquivo `.env` na pasta de dados do aplicativo (no Windows, `%APPDATA%\TelegramWatcher`; no Linux, veja a seção Linux), nunca no repositório.
 - As sessões do Telegram são salvas localmente e estão no `.gitignore`.
-- A aba Conversas é somente leitura: o app nunca envia, apaga ou marca mensagens como lidas por você. Fotos e avatares baixados ficam em cache em `%APPDATA%\TelegramWatcher\media`.
+- A aba Conversas é somente leitura: o app nunca envia, apaga ou marca mensagens como lidas por você. Fotos e avatares baixados ficam em cache na subpasta `media/` dos dados do aplicativo.
 - Nada é enviado para servidores de terceiros. A comunicação acontece direto com a API do Telegram.
 
 ## Documentação técnica

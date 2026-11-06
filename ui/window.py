@@ -111,7 +111,7 @@ class AppWindow(FluentWindow):
         return self._tray is not None and self.config.is_ready
 
     def _load_icon(self) -> QIcon:
-        icon_path = paths.assets_path("final_icon.ico")
+        icon_path = paths.assets_path("final_icon.ico" if os.name == "nt" else "app_icon.png")
         return QIcon(str(icon_path)) if icon_path.exists() else QIcon()
 
     def _init_window(self) -> None:
@@ -258,6 +258,7 @@ class AppWindow(FluentWindow):
     @staticmethod
     def _beep() -> None:
         if os.name != "nt":
+            QApplication.beep()
             return
         try:
             import winsound
@@ -456,6 +457,9 @@ class AppWindow(FluentWindow):
         self.config.save()
 
     def is_windows_autostart(self) -> bool:
+        if sys.platform.startswith("linux"):
+            from watcher.linux_desktop import autostart_file
+            return autostart_file().is_file()
         if os.name != "nt":
             return False
         import winreg
@@ -468,6 +472,14 @@ class AppWindow(FluentWindow):
             return False
 
     def set_windows_autostart(self, enabled: bool) -> None:
+        if sys.platform.startswith("linux"):
+            from watcher.linux_desktop import set_autostart
+            try:
+                set_autostart(enabled)
+            except OSError as exc:
+                self._toast(f"Falha ao configurar inicialização: {exc}", "error")
+                self.settings_page.load()
+            return
         if os.name != "nt":
             return
         import winreg

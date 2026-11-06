@@ -16,7 +16,10 @@ PROFILE_BUSY = (
     "como se você não estivesse logado em loja nenhuma."
 )
 
-_COOKIE_FILE = ("Default", "Network", "Cookies")
+def _cookie_file() -> Path:
+    profile = paths.browser_profile_dir() / "Default"
+    modern = profile / "Network" / "Cookies"
+    return modern if modern.exists() else profile / "Cookies"
 
 
 class ProfileInUse(RuntimeError):
@@ -36,15 +39,13 @@ def _read_cookie_rows(domain: str, names: tuple[str, ...]) -> list[tuple[str, in
     import sqlite3
     import tempfile
 
-    origem = paths.browser_profile_dir().joinpath(*_COOKIE_FILE)
+    origem = _cookie_file()
     if not origem.exists() or not names:
         return []
-    copia = Path(tempfile.gettempdir()) / f"watcher-cookies-{os.getpid()}.db"
+    with tempfile.NamedTemporaryFile(prefix="watcher-cookies-", suffix=".db", delete=False) as tmp:
+        copia = Path(tmp.name)
     try:
-        shutil.copy2(origem, copia)
-    except OSError:
-        return []
-    try:
+        shutil.copyfile(origem, copia)
         con = sqlite3.connect(copia)
         try:
             marcadores = ",".join("?" for _ in names)
@@ -55,7 +56,7 @@ def _read_cookie_rows(domain: str, names: tuple[str, ...]) -> list[tuple[str, in
             return list(con.execute(consulta, (f"%{domain}%", *names)))
         finally:
             con.close()
-    except sqlite3.Error:
+    except (OSError, sqlite3.Error):
         return []
     finally:
         try:
@@ -77,7 +78,22 @@ def has_session_cookies(domain: str, names: tuple[str, ...]) -> bool | None:
 
 
 def profile_in_use() -> bool:
-    alvo = paths.browser_profile_dir().joinpath(*_COOKIE_FILE)
+    if os.name == "posix":
+        import socket
+        lock = paths.browser_profile_dir() / "SingletonLock"
+        if lock.is_symlink():
+            try:
+                host, pid = os.readlink(lock).rsplit("-", 1)
+                if host != socket.gethostname():
+                    return True
+                if int(pid) > 0:
+                    os.kill(int(pid), 0)
+                    return True
+            except PermissionError:
+                return True
+            except (ValueError, OSError):
+                pass
+    alvo = _cookie_file()
     if not alvo.exists():
         return False
     try:
@@ -144,13 +160,21 @@ _CHROME_PATHS = (
 _cdp_process = None
 
 
-def system_chrome() -> str | None:
+def system_chrome(profile: Path) -> list[str]:
     import shutil
+    import subprocess
 
     for caminho in _CHROME_PATHS:
         if Path(caminho).exists():
-            return caminho
-    return shutil.which("chrome")
+            return [caminho]
+    for name in ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser", "chrome"):
+        if executable := shutil.which(name):
+            return [executable]
+    flatpak = shutil.which("flatpak")
+    if flatpak and subprocess.run([flatpak, "info", "com.google.Chrome"],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        return [flatpak, "run", f"--filesystem={profile}", "com.google.Chrome"]
+    return []
 
 
 def cdp_profile_dir() -> Path:
@@ -164,7 +188,8 @@ async def open_real_chrome(playwright: Playwright, url: str = "about:blank") -> 
     import socket
     import subprocess
 
-    chrome = system_chrome()
+    profile = cdp_profile_dir()
+    chrome = system_chrome(profile)
     if not chrome:
         raise ProfileInUse(
             "Esta loja exige o Google Chrome instalado no sistema, e ele não foi encontrado."
@@ -174,9 +199,9 @@ async def open_real_chrome(playwright: Playwright, url: str = "about:blank") -> 
         porta = sonda.getsockname()[1]
     _cdp_process = subprocess.Popen(
         [
-            chrome,
+            *chrome,
             f"--remote-debugging-port={porta}",
-            f"--user-data-dir={cdp_profile_dir()}",
+            f"--user-data-dir={profile}",
             "--no-first-run",
             "--no-default-browser-check",
             "--lang=pt-BR",
@@ -196,6 +221,7 @@ async def open_real_chrome(playwright: Playwright, url: str = "about:blank") -> 
             return navegador.contexts[0]
         except Exception as exc:
             ultimo = exc
+    close_real_chrome()
     raise ProfileInUse(f"Não consegui conectar ao Chrome do sistema: {ultimo}")
 
 

@@ -69,7 +69,7 @@ class SettingsPage(PageView):
         )
         self.sw_auto = self._switch(behavior_layout, "Iniciar monitor automaticamente", "Liga o monitor ao abrir o app")
         self.sw_startup = self._switch(
-            behavior_layout, "Iniciar com o Windows", "Abre o app minimizado na bandeja ao ligar o computador"
+            behavior_layout, "Iniciar ao entrar no sistema", "Abre o app minimizado na bandeja ao ligar o computador"
         )
         self.sw_theme = self._switch(behavior_layout, "Tema escuro", "")
         body.addWidget(behavior)

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QGuiApplication, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -711,8 +710,9 @@ class AutobuyPage(PageView):
         )
 
     def _open_file(self, path: str) -> None:
-        if Path(path).exists():
-            os.startfile(path)
+        target = Path(path).absolute()
+        if not target.exists() or not QDesktopServices.openUrl(QUrl.fromLocalFile(str(target))):
+            self._notify(f"Não foi possível abrir {target.name}.", "warning")
 
     def _open_log(self) -> None:
         from watcher.autobuy import journal
@@ -720,7 +720,7 @@ class AutobuyPage(PageView):
         caminho = journal.log_path()
         if not caminho.exists():
             caminho.write_text("Nenhuma compra automática registrada ainda.\n", encoding="utf-8")
-        os.startfile(str(caminho))
+        self._open_file(str(caminho))
 
     def _open_folder(self) -> None:
-        os.startfile(str(paths.autobuy_dir()))
+        self._open_file(str(paths.autobuy_dir()))
