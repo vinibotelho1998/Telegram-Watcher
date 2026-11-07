@@ -8,6 +8,10 @@ Monitor e replicador de mensagens do Telegram com interface desktop moderna. Cap
 ![Telethon](https://img.shields.io/badge/Telegram-Telethon-2CA5E0?logo=telegram&logoColor=white)
 ![Licença](https://img.shields.io/badge/Licen%C3%A7a-GPLv3-green)
 
+![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows-0078D6)
+
+[Baixar para Linux (fontes e lançador)](https://github.com/vinibotelho1998/Telegram-Watcher/releases) · [Baixar o instalador Windows](https://github.com/vinibotelho1998/Telegram-Watcher/releases/latest)
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 ## Destaques
@@ -60,10 +64,21 @@ Nada é enviado por essa tela: ela só lê. Mensagens novas aparecem sozinhas en
 
 ## Linux
 
-Nesta cópia, execute `./abrir.sh` para abrir a interface. Em uma instalação nova, rode
-`./instalar-linux.sh` uma vez. Ele prepara o ambiente Python e instala o Chromium
-usado pela automação opcional. O Chrome instalado via Flatpak também é detectado para
-lojas que precisam do navegador do sistema.
+Nas [releases](https://github.com/vinibotelho1998/Telegram-Watcher/releases), baixe
+**Telegram-Watcher-linux.tar.gz** e **Telegram-Watcher-linux.sha256** da mesma versão.
+O pacote contém os fontes e o lançador. O instalador usa Python 3.10 ou superior com venv e pip,
+ou uv, e baixa as dependências e o Chromium usado pela automação opcional.
+
+```sh
+sha256sum -c Telegram-Watcher-linux.sha256
+tar -xzf Telegram-Watcher-linux.tar.gz
+cd Telegram-Watcher
+./instalar-linux.sh
+./abrir.sh
+```
+
+Nas próximas aberturas, use `./abrir.sh`. O Chrome instalado via Flatpak também é
+detectado para lojas que precisam do navegador do sistema.
 
 O primeiro acesso abre o assistente de conta. Os dados ficam em
 `$XDG_DATA_HOME/telegramwatcher` (padrão `~/.local/share/telegramwatcher`).
